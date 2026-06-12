@@ -154,8 +154,8 @@ export default function ReportsPage() {
   const totalTaxDue = useMemo(() => monthlyTaxReports.reduce((sum, item) => sum + item.tax, 0), [monthlyTaxReports]);
 
   // Trigger Excel download
-  const handleExcelExport = () => {
-    exportAllReportsToExcel(profile, selectedYear, monthlyTaxReports, profitLoss, balanceSheet, accounts);
+  const handleExcelExport = async () => {
+    await exportAllReportsToExcel(profile, selectedYear, monthlyTaxReports, profitLoss, balanceSheet, accounts);
   };
 
   // Trigger PDF download depending on active tab
