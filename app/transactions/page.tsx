@@ -1,22 +1,27 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { RotateCcw, Trash2 } from "lucide-react";
+import { RotateCcw, Trash2, PlusCircle, Search, Calendar, Filter } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Drawer } from "@/components/ui/drawer";
+import { ConfirmModal } from "@/components/ui/modal";
+import { toast } from "@/lib/toast";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/data-table";
 import {
   createTransactionFirestore,
   restoreTransactionFirestore,
@@ -24,10 +29,7 @@ import {
 } from "@/lib/firestore/company-service";
 import { isDateInClosedPeriod } from "@/lib/accounting";
 import { formatCurrency, formatDate, toInputDate } from "@/lib/utils";
-import {
-  transactionSchema,
-  type TransactionFormValues,
-} from "@/lib/validation";
+import { transactionSchema, type TransactionFormValues } from "@/lib/validation";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 
 export default function TransactionsPage() {
@@ -37,13 +39,20 @@ export default function TransactionsPage() {
   const transactions = useKasFlowStore((state) => state.transactions);
   const accountingPeriods = useKasFlowStore((state) => state.accountingPeriods);
   const addTransaction = useKasFlowStore((state) => state.addTransaction);
-  const softDeleteTransaction = useKasFlowStore(
-    (state) => state.softDeleteTransaction,
-  );
-  const restoreTransaction = useKasFlowStore(
-    (state) => state.restoreTransaction,
-  );
-  const [message, setMessage] = useState<string | null>(null);
+  const softDeleteTransaction = useKasFlowStore((state) => state.softDeleteTransaction);
+  const restoreTransaction = useKasFlowStore((state) => state.restoreTransaction);
+
+  // UI States
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState<string>("all");
+  const [filterAccount, setFilterAccount] = useState<string>("all");
+
+  // Delete Confirmation Modal State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [selectedTxId, setSelectedTxId] = useState<string | null>(null);
+  const [selectedTxDate, setSelectedTxDate] = useState<string>("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const form = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionSchema),
@@ -52,16 +61,18 @@ export default function TransactionsPage() {
       date: toInputDate(),
       amount: 0,
       description: "",
-      categoryId: "cat_sales",
-      cashAccountId: "cash_main",
-      sourceAccountId: "cash_main",
-      destinationAccountId: "bank_bca",
+      categoryId: categories.find((c) => c.type === "income")?.id ?? "",
+      cashAccountId: cashAccounts[0]?.id ?? "",
+      sourceAccountId: cashAccounts[0]?.id ?? "",
+      destinationAccountId: cashAccounts[1]?.id ?? cashAccounts[0]?.id ?? "",
     },
   });
-  const type = form.watch("type");
+
+  const transactionType = form.watch("type");
+
   const filteredCategories = useMemo(
-    () => categories.filter((category) => category.type === type),
-    [categories, type],
+    () => categories.filter((category) => category.type === transactionType),
+    [categories, transactionType],
   );
 
   const onSubmit = async (values: TransactionFormValues) => {
@@ -83,9 +94,7 @@ export default function TransactionsPage() {
         addTransaction(values);
       }
 
-      setMessage(
-        "Transaksi tersimpan ke Firestore dan jurnal otomatis berhasil dibuat.",
-      );
+      toast.success("Transaksi berhasil disimpan dan jurnal otomatis dibuat.");
       form.reset({
         type: values.type,
         date: toInputDate(),
@@ -96,263 +105,440 @@ export default function TransactionsPage() {
         sourceAccountId: "cash_main",
         destinationAccountId: "bank_bca",
       });
+      setIsDrawerOpen(false);
     } catch (error) {
-      setMessage(
+      toast.error(
         error instanceof Error ? error.message : "Gagal menyimpan transaksi.",
       );
     }
   };
 
+  const openDeleteConfirmation = (id: string, date: string) => {
+    setSelectedTxId(id);
+    setSelectedTxDate(date);
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedTxId) return;
+    setDeleteLoading(true);
+    try {
+      if (isDateInClosedPeriod(accountingPeriods, selectedTxDate)) {
+        throw new Error(
+          "Tidak dapat menghapus transaksi pada periode yang telah ditutup.",
+        );
+      }
+
+      if (appUser) {
+        await softDeleteTransactionFirestore(appUser.companyId, selectedTxId);
+      } else {
+        softDeleteTransaction(selectedTxId);
+      }
+      toast.success("Transaksi berhasil dinonaktifkan (soft deleted).");
+      setDeleteModalOpen(false);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Gagal menghapus transaksi.",
+      );
+    } finally {
+      setDeleteLoading(false);
+      setSelectedTxId(null);
+    }
+  };
+
+  const handleRestore = async (id: string, date: string) => {
+    try {
+      if (isDateInClosedPeriod(accountingPeriods, date)) {
+        throw new Error(
+          "Tidak dapat memulihkan transaksi pada periode yang telah ditutup.",
+        );
+      }
+
+      if (appUser) {
+        await restoreTransactionFirestore(appUser.companyId, id);
+      } else {
+        restoreTransaction(id);
+      }
+      toast.success("Transaksi berhasil dipulihkan.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Gagal memulihkan transaksi.",
+      );
+    }
+  };
+
+  // Filtered and searched transactions list
+  const filteredTransactions = useMemo(() => {
+    return transactions
+      .filter((tx) => {
+        // Search description
+        const matchesSearch = tx.description.toLowerCase().includes(searchTerm.toLowerCase());
+
+        // Type filter
+        const matchesType = filterType === "all" || tx.type === filterType;
+
+        // Account filter
+        let matchesAccount = true;
+        if (filterAccount !== "all") {
+          if (tx.type === "transfer") {
+            matchesAccount = tx.sourceAccountId === filterAccount || tx.destinationAccountId === filterAccount;
+          } else {
+            matchesAccount = tx.cashAccountId === filterAccount;
+          }
+        }
+
+        return matchesSearch && matchesType && matchesAccount;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions, searchTerm, filterType, filterAccount]);
+
   return (
-    <div className="space-y-6">
-      <div>
-        <Badge>Transaksi → Journal Entry</Badge>
-        <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
-          Transaksi
-        </h2>
-        <p className="mt-1 text-muted-foreground">
-          Catat pemasukan, pengeluaran, dan transfer antar akun kas. Jurnal
-          dibuat otomatis dan balance.
-        </p>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Header section with Action Button */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div>
+          <Badge tone="blue">Ledger Entries</Badge>
+          <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
+            Riwayat Transaksi
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Catatan penerimaan kas, pengeluaran kas, serta transfer antar kas/bank.
+          </p>
+        </div>
+        <Button
+          onClick={() => {
+            setIsDrawerOpen(true);
+          }}
+          className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs gap-1.5 h-9 self-start sm:self-auto shadow-sm"
+        >
+          <PlusCircle className="h-4 w-4" /> Tambah Transaksi
+        </Button>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Input Transaksi</CardTitle>
-            <CardDescription>
-              Validasi menggunakan React Hook Form + Zod.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
-              <div className="grid gap-2">
-                <Label>Jenis Transaksi</Label>
-                <Select
-                  {...form.register("type")}
-                  onChange={(event) => {
-                    form.setValue(
-                      "type",
-                      event.target.value as TransactionFormValues["type"],
-                    );
-                    form.setValue(
-                      "categoryId",
-                      event.target.value === "expense"
-                        ? "cat_operational"
-                        : "cat_sales",
-                    );
-                  }}
+      {/* Filter and search bar */}
+      <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-soft">
+        <CardContent className="p-4 flex flex-col md:flex-row gap-3">
+          {/* Search Input */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
+            <input
+              type="text"
+              placeholder="Cari deskripsi transaksi..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card pl-9 pr-3 text-xs outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150"
+            />
+          </div>
+
+          {/* Type and Account Filter */}
+          <div className="flex gap-2 min-w-[320px]">
+            <div className="flex-1 relative">
+              <Filter className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card pl-8 pr-2 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
+              >
+                <option value="all">Semua Jenis</option>
+                <option value="income">Pemasukan</option>
+                <option value="expense">Pengeluaran</option>
+                <option value="transfer">Transfer</option>
+              </select>
+            </div>
+
+            <div className="flex-1 relative">
+              <Filter className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <select
+                value={filterAccount}
+                onChange={(e) => setFilterAccount(e.target.value)}
+                className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card pl-8 pr-2 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
+              >
+                <option value="all">Semua Kas/Bank</option>
+                {cashAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Main Full-Width Data Table */}
+      {filteredTransactions.length ? (
+        <Card className="border-zinc-200/60 dark:border-zinc-800/50 overflow-hidden shadow-sm">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tanggal</TableHead>
+                <TableHead>Jenis</TableHead>
+                <TableHead>Keterangan</TableHead>
+                <TableHead>Kas / Bank</TableHead>
+                <TableHead className="text-right">Nominal</TableHead>
+                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredTransactions.map((tx) => {
+                const isDeleted = tx.deletedAt !== undefined;
+
+                // Details label for accounts
+                let accountName = "-";
+                if (tx.type === "transfer") {
+                  const src = cashAccounts.find((a) => a.id === tx.sourceAccountId)?.name ?? "Kas";
+                  const dest = cashAccounts.find((a) => a.id === tx.destinationAccountId)?.name ?? "Kas";
+                  accountName = `${src} ➔ ${dest}`;
+                } else {
+                  accountName = cashAccounts.find((a) => a.id === tx.cashAccountId)?.name ?? "Kas";
+                }
+
+                // Type label with badges
+                const typeBadge = {
+                  income: <Badge tone="green">Pemasukan</Badge>,
+                  expense: <Badge tone="red">Pengeluaran</Badge>,
+                  transfer: <Badge tone="blue">Transfer</Badge>,
+                }[tx.type];
+
+                return (
+                  <TableRow key={tx.id} className={isDeleted ? "opacity-55 hover:bg-zinc-50/20" : ""}>
+                    <TableCell className="font-semibold text-zinc-950 dark:text-white">
+                      <span className="flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5 text-muted-foreground/60" />
+                        {formatDate(tx.date)}
+                      </span>
+                    </TableCell>
+                    <TableCell>{typeBadge}</TableCell>
+                    <TableCell className="max-w-[200px] truncate">{tx.description}</TableCell>
+                    <TableCell className="font-semibold text-xs">{accountName}</TableCell>
+                    <TableCell className="text-right font-bold text-zinc-950 dark:text-white text-xs">
+                      {tx.type === "expense" ? "-" : ""}
+                      {formatCurrency(tx.amount)}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {isDeleted ? (
+                        <Badge tone="red">Deleted</Badge>
+                      ) : (
+                        <Badge tone="green">Posted</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        {isDeleted ? (
+                          <button
+                            onClick={() => handleRestore(tx.id, tx.date)}
+                            className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-emerald-650 rounded-lg transition"
+                            title="Pulihkan Transaksi"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openDeleteConfirmation(tx.id, tx.date)}
+                            className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/25 text-rose-600 rounded-lg transition"
+                            title="Hapus Transaksi"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
+      ) : (
+        <EmptyState
+          title="Tidak ada transaksi"
+          description="Ganti filter pencarian atau buat transaksi keuangan baru dengan menekan tombol di atas."
+          action={
+            <Button
+              onClick={() => setIsDrawerOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs"
+            >
+              Tambah Transaksi Pertama
+            </Button>
+          }
+        />
+      )}
+
+      {/* Side-Over Right Drawer for Input Form */}
+      <Drawer
+        open={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        title="Pencatatan Transaksi"
+        description="Masukkan nominal uang dan alokasikan akun debit/kredit yang sesuai."
+      >
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {/* Jenis Transaksi */}
+          <div className="space-y-1">
+            <Label htmlFor="type">Jenis Transaksi</Label>
+            <select
+              id="type"
+              {...form.register("type")}
+              onChange={(event) => {
+                form.setValue("type", event.target.value as any);
+                form.setValue(
+                  "categoryId",
+                  event.target.value === "expense"
+                    ? categories.find((c) => c.type === "expense")?.id ?? ""
+                    : categories.find((c) => c.type === "income")?.id ?? ""
+                );
+              }}
+              className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-805 bg-card px-3 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
+            >
+              <option value="income">Pemasukan Kas</option>
+              <option value="expense">Pengeluaran Kas</option>
+              <option value="transfer">Transfer Antar Bank</option>
+            </select>
+          </div>
+
+          {/* Tanggal */}
+          <div className="space-y-1">
+            <Label htmlFor="date">Tanggal</Label>
+            <Input
+              id="date"
+              type="date"
+              {...form.register("date")}
+            />
+            {form.formState.errors.date && <p className="text-[10px] font-bold text-red-500">{form.formState.errors.date.message}</p>}
+          </div>
+
+          {/* Conditional Input based on Transaction Type */}
+          {transactionType !== "transfer" ? (
+            <>
+              {/* Category */}
+              <div className="space-y-1">
+                <Label htmlFor="categoryId">Kategori</Label>
+                <select
+                  id="categoryId"
+                  {...form.register("categoryId")}
+                  className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-805 bg-card px-3 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
                 >
-                  <option value="income">Uang Masuk</option>
-                  <option value="expense">Uang Keluar</option>
-                  <option value="transfer">Transfer Kas</option>
-                </Select>
+                  {filteredCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+                {form.formState.errors.categoryId && <p className="text-[10px] font-bold text-red-500">{form.formState.errors.categoryId.message}</p>}
               </div>
 
-              <div className="grid gap-2">
-                <Label>Tanggal</Label>
-                <Input type="date" {...form.register("date")} />
-                {form.formState.errors.date ? (
-                  <p className="text-xs text-red-500">
-                    {form.formState.errors.date.message}
-                  </p>
-                ) : null}
+              {/* Cash Account */}
+              <div className="space-y-1">
+                <Label htmlFor="cashAccountId">Akun Kas</Label>
+                <select
+                  id="cashAccountId"
+                  {...form.register("cashAccountId")}
+                  className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-805 bg-card px-3 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
+                >
+                  {cashAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {/* Source Cash Account */}
+              <div className="space-y-1">
+                <Label htmlFor="sourceAccountId">Akun Sumber</Label>
+                <select
+                  id="sourceAccountId"
+                  {...form.register("sourceAccountId")}
+                  className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-805 bg-card px-3 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
+                >
+                  {cashAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              {type !== "transfer" ? (
-                <>
-                  <div className="grid gap-2">
-                    <Label>Kategori</Label>
-                    <Select {...form.register("categoryId")}>
-                      {filteredCategories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </Select>
-                    {form.formState.errors.categoryId ? (
-                      <p className="text-xs text-red-500">
-                        {form.formState.errors.categoryId.message}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label>Akun Kas</Label>
-                    <Select {...form.register("cashAccountId")}>
-                      {cashAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                </>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label>Akun Sumber</Label>
-                    <Select {...form.register("sourceAccountId")}>
-                      {cashAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Akun Tujuan</Label>
-                    <Select {...form.register("destinationAccountId")}>
-                      {cashAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name}
-                        </option>
-                      ))}
-                    </Select>
-                    {form.formState.errors.destinationAccountId ? (
-                      <p className="text-xs text-red-500">
-                        {form.formState.errors.destinationAccountId.message}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              )}
-
-              <div className="grid gap-2">
-                <Label>Nominal</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="1000"
-                  {...form.register("amount", { valueAsNumber: true })}
-                />
-                {form.formState.errors.amount ? (
-                  <p className="text-xs text-red-500">
-                    {form.formState.errors.amount.message}
-                  </p>
-                ) : null}
+              {/* Destination Cash Account */}
+              <div className="space-y-1">
+                <Label htmlFor="destinationAccountId">Akun Tujuan</Label>
+                <select
+                  id="destinationAccountId"
+                  {...form.register("destinationAccountId")}
+                  className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-805 bg-card px-3 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
+                >
+                  {cashAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+                {form.formState.errors.destinationAccountId && <p className="text-[10px] font-bold text-red-500">{form.formState.errors.destinationAccountId.message}</p>}
               </div>
+            </div>
+          )}
 
-              <div className="grid gap-2">
-                <Label>Deskripsi</Label>
-                <Textarea
-                  {...form.register("description")}
-                  placeholder="Contoh: Penjualan produk harian"
-                />
-                {form.formState.errors.description ? (
-                  <p className="text-xs text-red-500">
-                    {form.formState.errors.description.message}
-                  </p>
-                ) : null}
-              </div>
-
-              {message ? (
-                <p className="rounded-xl bg-muted px-3 py-2 text-sm">
-                  {message}
-                </p>
-              ) : null}
-              <Button className="w-full" type="submit">
-                Simpan & Buat Jurnal
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Riwayat Transaksi</CardTitle>
-            <CardDescription>
-              Soft delete aktif agar data bisa dipulihkan dari recycle bin.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {transactions.length ? (
-              <div className="overflow-x-auto scrollbar-thin">
-                <table className="w-full min-w-[780px] text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="py-3 pr-4">Tanggal</th>
-                      <th className="py-3 pr-4">Jenis</th>
-                      <th className="py-3 pr-4">Deskripsi</th>
-                      <th className="py-3 pr-4 text-right">Nominal</th>
-                      <th className="py-3 pr-4">Status</th>
-                      <th className="py-3 text-right">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {transactions.map((transaction) => (
-                      <tr
-                        key={transaction.id}
-                        className="border-b last:border-0"
-                      >
-                        <td className="py-3 pr-4">
-                          {formatDate(transaction.date)}
-                        </td>
-                        <td className="py-3 pr-4 capitalize">
-                          {transaction.type}
-                        </td>
-                        <td className="py-3 pr-4">{transaction.description}</td>
-                        <td className="py-3 pr-4 text-right font-medium">
-                          {formatCurrency(transaction.amount)}
-                        </td>
-                        <td className="py-3 pr-4">
-                          {transaction.deletedAt ? (
-                            <Badge tone="red">Deleted</Badge>
-                          ) : (
-                            <Badge tone="green">Posted</Badge>
-                          )}
-                        </td>
-                        <td className="py-3 text-right">
-                          {transaction.deletedAt ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={async () => {
-                                if (appUser) {
-                                  await restoreTransactionFirestore(
-                                    appUser.companyId,
-                                    transaction.id,
-                                  );
-                                } else {
-                                  restoreTransaction(transaction.id);
-                                }
-                              }}
-                            >
-                              <RotateCcw className="h-4 w-4" /> Restore
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={async () => {
-                                if (appUser) {
-                                  await softDeleteTransactionFirestore(
-                                    appUser.companyId,
-                                    transaction.id,
-                                  );
-                                } else {
-                                  softDeleteTransaction(transaction.id);
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" /> Hapus
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <EmptyState
-                title="Belum ada transaksi"
-                description="Input transaksi pertama atau seed demo company dari menu Utilitas."
+          {/* Nominal */}
+          <div className="space-y-1">
+            <Label htmlFor="amount">Nominal Uang (Rp)</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground/60 select-none">IDR</span>
+              <input
+                id="amount"
+                type="number"
+                min="0"
+                step="1000"
+                {...form.register("amount", { valueAsNumber: true })}
+                className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-805 bg-card pl-10 pr-3 text-xs outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150"
               />
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </div>
+            {form.formState.errors.amount && <p className="text-[10px] font-bold text-red-500">{form.formState.errors.amount.message}</p>}
+          </div>
+
+          {/* Deskripsi */}
+          <div className="space-y-1">
+            <Label htmlFor="description">Deskripsi</Label>
+            <Textarea
+              id="description"
+              placeholder="Contoh: Pembelian kopi arabika mentah 5kg"
+              {...form.register("description")}
+            />
+            {form.formState.errors.description && <p className="text-[10px] font-bold text-red-500">{form.formState.errors.description.message}</p>}
+          </div>
+
+          {/* Footer Buttons */}
+          <div className="flex gap-2 pt-4 border-t mt-6">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsDrawerOpen(false)}
+              className="flex-1 text-xs font-semibold h-9"
+            >
+              Batal
+            </Button>
+            <Button
+              type="submit"
+              loading={form.formState.isSubmitting}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs h-9"
+            >
+              Simpan Transaksi
+            </Button>
+          </div>
+        </form>
+      </Drawer>
+
+      {/* Centered Confirm Modal with Frosted glass effect for Delete */}
+      <ConfirmModal
+        open={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={handleConfirmDelete}
+        loading={deleteLoading}
+        title="Konfirmasi Hapus Transaksi"
+        description="Apakah Anda yakin ingin menonaktifkan transaksi ini? Tindakan ini akan menghapus jurnal penyesuaian terkait dan memicu penyesuaian saldo pada buku besar secara real-time."
+        confirmLabel="Hapus Transaksi"
+      />
     </div>
   );
 }

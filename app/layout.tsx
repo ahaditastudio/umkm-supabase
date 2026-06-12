@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "@/app/globals.css";
 import { AppShell } from "@/components/app-shell";
 import { Providers } from "@/components/providers";
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-plus-jakarta-sans",
+  weight: ["300", "400", "500", "600", "700", "800"],
+});
 
 export const metadata: Metadata = {
   title: {
@@ -18,8 +25,8 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="id" suppressHydrationWarning>
-      <body>
+    <html lang="id" className={plusJakartaSans.variable} suppressHydrationWarning>
+      <body className="font-sans antialiased">
         <Providers>
           <AppShell>{children}</AppShell>
         </Providers>

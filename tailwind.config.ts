@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import defaultTheme from "tailwindcss/defaultTheme";
 
 const config: Config = {
   darkMode: "class",
@@ -10,6 +11,13 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["var(--font-plus-jakarta-sans)", ...defaultTheme.fontFamily.sans],
+      },
+      spacing: {
+        "8.5": "2.125rem", // 34px
+        "9.5": "2.375rem", // 38px
+      },
       borderRadius: {
         xl: "12px",
       },
@@ -27,11 +35,11 @@ const config: Config = {
         "destructive-foreground": "hsl(var(--destructive-foreground))",
       },
       boxShadow: {
-        soft: "0 10px 30px -18px rgb(15 23 42 / 0.35)",
+        soft: "0 10px 30px -18px rgb(15 23 42 / 0.08)", // Redesigned to be lighter
       },
     },
   },
-  plugins: [],
+  plugins: [require("tailwindcss-animate")],
 };
 
 export default config;

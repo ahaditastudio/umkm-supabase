@@ -1,17 +1,29 @@
-import { Inbox } from "lucide-react";
+import * as React from "react";
+import { Inbox, LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
-export function EmptyState({ title, description }: { title: string; description: string }) {
+export function EmptyState({
+  title,
+  description,
+  icon: Icon = Inbox,
+  action,
+}: {
+  title: string;
+  description: string;
+  icon?: LucideIcon;
+  action?: React.ReactNode;
+}) {
   return (
-    <Card>
-      <CardContent className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-        <div className="rounded-full bg-muted p-3 text-muted-foreground">
-          <Inbox className="h-6 w-6" />
+    <Card className="border-dashed bg-zinc-50/50 dark:bg-zinc-900/10">
+      <CardContent className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted border text-muted-foreground/80">
+          <Icon className="h-5 w-5" />
         </div>
-        <div>
-          <h3 className="font-semibold">{title}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        <div className="max-w-sm space-y-1">
+          <h3 className="text-sm font-semibold text-foreground tracking-tight">{title}</h3>
+          <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
         </div>
+        {action ? <div className="mt-2 animate-in fade-in zoom-in-95 duration-200">{action}</div> : null}
       </CardContent>
     </Card>
   );
