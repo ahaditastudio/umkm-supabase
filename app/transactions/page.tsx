@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { RotateCcw, Trash2, PlusCircle, Search, Calendar, Filter } from "lucide-react";
+import { RotateCcw, Trash2, PlusCircle, Search, Calendar, Filter, ArrowDownLeft, ArrowUpRight, ArrowLeftRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useAuth } from "@/components/auth-provider";
@@ -15,20 +15,12 @@ import { Drawer } from "@/components/ui/drawer";
 import { ConfirmModal } from "@/components/ui/modal";
 import { toast } from "@/lib/toast";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/data-table";
-import {
   createTransactionFirestore,
   restoreTransactionFirestore,
   softDeleteTransactionFirestore,
 } from "@/lib/firestore/company-service";
 import { isDateInClosedPeriod } from "@/lib/accounting";
-import { formatCurrency, formatDate, toInputDate } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, toInputDate } from "@/lib/utils";
 import { transactionSchema, type TransactionFormValues } from "@/lib/validation";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 
@@ -192,6 +184,22 @@ export default function TransactionsPage() {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, searchTerm, filterType, filterAccount]);
 
+  // Group transactions by date for the timeline view
+  const groupedTransactions = useMemo(() => {
+    const groups: Record<string, typeof filteredTransactions> = {};
+    filteredTransactions.forEach((tx) => {
+      if (!groups[tx.date]) {
+        groups[tx.date] = [];
+      }
+      groups[tx.date].push(tx);
+    });
+    return groups;
+  }, [filteredTransactions]);
+
+  const sortedDates = useMemo(() => {
+    return Object.keys(groupedTransactions).sort((a, b) => b.localeCompare(a));
+  }, [groupedTransactions]);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header section with Action Button */}
@@ -265,91 +273,161 @@ export default function TransactionsPage() {
         </CardContent>
       </Card>
 
-      {/* Main Full-Width Data Table */}
+      {/* Main Full-Width Timeline Feed */}
       {filteredTransactions.length ? (
-        <Card className="border-zinc-200/60 dark:border-zinc-800/50 overflow-hidden shadow-sm">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tanggal</TableHead>
-                <TableHead>Jenis</TableHead>
-                <TableHead>Keterangan</TableHead>
-                <TableHead>Kas / Bank</TableHead>
-                <TableHead className="text-right">Nominal</TableHead>
-                <TableHead className="text-center">Status</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredTransactions.map((tx) => {
-                const isDeleted = tx.deletedAt !== undefined;
+        <div className="space-y-6">
+          {sortedDates.map((date) => {
+            const dateTransactions = groupedTransactions[date];
+            return (
+              <div key={date} className="space-y-2.5">
+                {/* Date Group Header */}
+                <div className="sticky top-[57px] z-10 -mx-4 px-4 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-y border-zinc-200/50 dark:border-zinc-800/50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+                    <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                      {formatDate(date)}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500">
+                    {dateTransactions.length} Transaksi
+                  </span>
+                </div>
 
-                // Details label for accounts
-                let accountName = "-";
-                if (tx.type === "transfer") {
-                  const src = cashAccounts.find((a) => a.id === tx.sourceAccountId)?.name ?? "Kas";
-                  const dest = cashAccounts.find((a) => a.id === tx.destinationAccountId)?.name ?? "Kas";
-                  accountName = `${src} ➔ ${dest}`;
-                } else {
-                  accountName = cashAccounts.find((a) => a.id === tx.cashAccountId)?.name ?? "Kas";
-                }
+                {/* Timeline Card Items List */}
+                <Card className="border-zinc-200/60 dark:border-zinc-800/50 overflow-hidden shadow-sm divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                  {dateTransactions.map((tx) => {
+                    const isDeleted = tx.deletedAt != null;
 
-                // Type label with badges
-                const typeBadge = {
-                  income: <Badge tone="green">Pemasukan</Badge>,
-                  expense: <Badge tone="red">Pengeluaran</Badge>,
-                  transfer: <Badge tone="blue">Transfer</Badge>,
-                }[tx.type];
+                    // Details label for accounts
+                    let accountName = "-";
+                    if (tx.type === "transfer") {
+                      const src = cashAccounts.find((a) => a.id === tx.sourceAccountId)?.name ?? "Kas";
+                      const dest = cashAccounts.find((a) => a.id === tx.destinationAccountId)?.name ?? "Kas";
+                      accountName = `${src} ➔ ${dest}`;
+                    } else {
+                      accountName = cashAccounts.find((a) => a.id === tx.cashAccountId)?.name ?? "Kas";
+                    }
 
-                return (
-                  <TableRow key={tx.id} className={isDeleted ? "opacity-55 hover:bg-zinc-50/20" : ""}>
-                    <TableCell className="font-semibold text-zinc-950 dark:text-white">
-                      <span className="flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5 text-muted-foreground/60" />
-                        {formatDate(tx.date)}
-                      </span>
-                    </TableCell>
-                    <TableCell>{typeBadge}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{tx.description}</TableCell>
-                    <TableCell className="font-semibold text-xs">{accountName}</TableCell>
-                    <TableCell className="text-right font-bold text-zinc-950 dark:text-white text-xs">
-                      {tx.type === "expense" ? "-" : ""}
-                      {formatCurrency(tx.amount)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {isDeleted ? (
-                        <Badge tone="red">Deleted</Badge>
-                      ) : (
-                        <Badge tone="green">Posted</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        {isDeleted ? (
-                          <button
-                            onClick={() => handleRestore(tx.id, tx.date)}
-                            className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-emerald-650 rounded-lg transition"
-                            title="Pulihkan Transaksi"
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => openDeleteConfirmation(tx.id, tx.date)}
-                            className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/25 text-rose-600 rounded-lg transition"
-                            title="Hapus Transaksi"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                    // Category name if available
+                    const categoryName = categories.find((c) => c.id === tx.categoryId)?.name;
+
+                    // Configure icon and colors based on transaction type
+                    const typeConfig = {
+                      income: {
+                        icon: ArrowDownLeft,
+                        bg: "bg-emerald-50 dark:bg-emerald-500/10",
+                        iconColor: "text-emerald-600 dark:text-emerald-400",
+                        amountColor: "text-emerald-600 dark:text-emerald-400",
+                        prefix: "+",
+                      },
+                      expense: {
+                        icon: ArrowUpRight,
+                        bg: "bg-rose-50 dark:bg-rose-500/10",
+                        iconColor: "text-rose-600 dark:text-rose-400",
+                        amountColor: "text-rose-600 dark:text-rose-400",
+                        prefix: "-",
+                      },
+                      transfer: {
+                        icon: ArrowLeftRight,
+                        bg: "bg-blue-50 dark:bg-blue-500/10",
+                        iconColor: "text-blue-600 dark:text-blue-400",
+                        amountColor: "text-blue-600 dark:text-blue-400",
+                        prefix: "",
+                      },
+                    }[tx.type];
+
+                    const TypeIcon = typeConfig.icon;
+
+                    return (
+                      <div
+                        key={tx.id}
+                        className={cn(
+                          "group relative p-4 flex items-center justify-between gap-4 transition duration-200 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20",
+                          isDeleted && "opacity-45"
                         )}
+                      >
+                        {/* Left: Icon & Description Info */}
+                        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                          {/* Round Icon container */}
+                          <div className={cn("p-2.5 rounded-xl shrink-0 transition-transform duration-200 group-hover:scale-105", typeConfig.bg)}>
+                            <TypeIcon className={cn("h-4 w-4", typeConfig.iconColor)} />
+                          </div>
+
+                          {/* Text details */}
+                          <div className="min-w-0 space-y-1">
+                            <p
+                              className={cn(
+                                "text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate leading-snug",
+                                isDeleted && "line-through text-muted-foreground"
+                              )}
+                            >
+                              {tx.description}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground font-medium">
+                              <span>{accountName}</span>
+                              {categoryName && (
+                                <>
+                                  <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                                  <span className="px-1.5 py-0.2 bg-zinc-100 dark:bg-zinc-800/80 rounded-md text-zinc-650 dark:text-zinc-400">
+                                    {categoryName}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: Amount, Badge, and Action buttons */}
+                        <div className="flex items-center gap-4 shrink-0 text-right">
+                          <div className="space-y-1">
+                            {/* Amount */}
+                            <p className={cn("text-xs font-bold leading-none tracking-tight", typeConfig.amountColor)}>
+                              {typeConfig.prefix}
+                              {formatCurrency(tx.amount)}
+                            </p>
+
+                            {/* Status Badge & Actions (Contextual on hover) */}
+                            <div className="h-5 flex items-center justify-end relative">
+                              {/* Standard Posted/Deleted Badge (Hidden on Hover if active/actions exist) */}
+                              <div className="transition-opacity duration-200 group-hover:opacity-0 flex items-center justify-end">
+                                {isDeleted ? (
+                                  <Badge tone="red">Deleted</Badge>
+                                ) : (
+                                  <Badge tone="green">Posted</Badge>
+                                )}
+                              </div>
+
+                              {/* Contextual Actions (Fade in on Hover) */}
+                              <div className="absolute right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-1 bg-gradient-to-l from-zinc-50/90 dark:from-zinc-900/95 via-background pl-4">
+                                {isDeleted ? (
+                                  <button
+                                    onClick={() => handleRestore(tx.id, tx.date)}
+                                    className="p-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-650 dark:text-emerald-400 rounded-md transition"
+                                    title="Pulihkan Transaksi"
+                                  >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => openDeleteConfirmation(tx.id, tx.date)}
+                                    className="p-1 hover:bg-red-50 dark:hover:bg-red-950/30 text-rose-600 rounded-md transition"
+                                    title="Hapus Transaksi"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
+                    );
+                  })}
+                </Card>
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <EmptyState
           title="Tidak ada transaksi"

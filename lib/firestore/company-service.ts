@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteField,
   doc,
   getDocs,
   query,
@@ -171,12 +172,12 @@ export async function restoreTransactionFirestore(
   const timestamp = now();
   const transaction = {
     id: transactionId,
-    deletedAt: null,
+    deletedAt: deleteField(),
     updatedAt: timestamp,
   };
   const journal = {
     id: `jr_${transactionId}`,
-    deletedAt: null,
+    deletedAt: deleteField(),
     updatedAt: timestamp,
   };
   const audit = auditDoc(companyId, "recycle_bin", "restore", {
@@ -612,6 +613,126 @@ export async function addAccountingPeriodFirestore(
   batch.set(
     doc(firestore, "accounting_periods", period.id),
     cleanForFirestore(period),
+  );
+  batch.set(doc(firestore, "audit_logs", audit.id), cleanForFirestore(audit));
+  await batch.commit();
+}
+
+export async function updateCategoryFirestore(
+  companyId: string,
+  categoryId: string,
+  data: Partial<Pick<Category, "name" | "type" | "accountId">>,
+) {
+  const firestore = requireDb();
+  const audit = auditDoc(companyId, "account_categories", "update", {
+    categoryId,
+    ...data,
+  });
+  const batch = writeBatch(firestore);
+  batch.set(
+    doc(firestore, "account_categories", categoryId),
+    cleanForFirestore({ ...data, updatedAt: now() }),
+    { merge: true },
+  );
+  batch.set(doc(firestore, "audit_logs", audit.id), cleanForFirestore(audit));
+  await batch.commit();
+}
+
+export async function updateCashAccountFirestore(
+  companyId: string,
+  cashAccountId: string,
+  data: Partial<Pick<CashAccount, "name" | "type" | "accountId">>,
+) {
+  const firestore = requireDb();
+  const audit = auditDoc(companyId, "cash_accounts", "update", {
+    cashAccountId,
+    ...data,
+  });
+  const batch = writeBatch(firestore);
+  batch.set(
+    doc(firestore, "cash_accounts", cashAccountId),
+    cleanForFirestore({ ...data, updatedAt: now() }),
+    { merge: true },
+  );
+  batch.set(doc(firestore, "audit_logs", audit.id), cleanForFirestore(audit));
+  await batch.commit();
+}
+
+export async function updateCustomerFirestore(
+  companyId: string,
+  customerId: string,
+  data: Partial<Pick<Customer, "name" | "phone" | "email">>,
+) {
+  const firestore = requireDb();
+  const audit = auditDoc(companyId, "customers", "update", {
+    customerId,
+    ...data,
+  });
+  const batch = writeBatch(firestore);
+  batch.set(
+    doc(firestore, "customers", customerId),
+    cleanForFirestore({ ...data, updatedAt: now() }),
+    { merge: true },
+  );
+  batch.set(doc(firestore, "audit_logs", audit.id), cleanForFirestore(audit));
+  await batch.commit();
+}
+
+export async function updateSupplierFirestore(
+  companyId: string,
+  supplierId: string,
+  data: Partial<Pick<Supplier, "name" | "phone" | "email">>,
+) {
+  const firestore = requireDb();
+  const audit = auditDoc(companyId, "suppliers", "update", {
+    supplierId,
+    ...data,
+  });
+  const batch = writeBatch(firestore);
+  batch.set(
+    doc(firestore, "suppliers", supplierId),
+    cleanForFirestore({ ...data, updatedAt: now() }),
+    { merge: true },
+  );
+  batch.set(doc(firestore, "audit_logs", audit.id), cleanForFirestore(audit));
+  await batch.commit();
+}
+
+export async function updateAccountFirestore(
+  companyId: string,
+  accountId: string,
+  data: Partial<Pick<Account, "code" | "name" | "type" | "normalBalance">>,
+) {
+  const firestore = requireDb();
+  const audit = auditDoc(companyId, "accounts", "update", {
+    accountId,
+    ...data,
+  });
+  const batch = writeBatch(firestore);
+  batch.set(
+    doc(firestore, "accounts", accountId),
+    cleanForFirestore({ ...data, updatedAt: now() }),
+    { merge: true },
+  );
+  batch.set(doc(firestore, "audit_logs", audit.id), cleanForFirestore(audit));
+  await batch.commit();
+}
+
+export async function updateAccountingPeriodFirestore(
+  companyId: string,
+  periodId: string,
+  data: Partial<Pick<AccountingPeriod, "startDate" | "endDate">>,
+) {
+  const firestore = requireDb();
+  const audit = auditDoc(companyId, "accounting_periods", "update", {
+    periodId,
+    ...data,
+  });
+  const batch = writeBatch(firestore);
+  batch.set(
+    doc(firestore, "accounting_periods", periodId),
+    cleanForFirestore({ ...data, updatedAt: now() }),
+    { merge: true },
   );
   batch.set(doc(firestore, "audit_logs", audit.id), cleanForFirestore(audit));
   await batch.commit();

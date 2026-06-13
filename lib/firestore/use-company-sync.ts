@@ -45,7 +45,16 @@ function subscribeCompanyDocs<T>(
 ) {
   return onSnapshot(
     companyQuery(collectionName, companyId),
-    (snapshot) => callback(snapshot.docs.map((item) => item.data() as T)),
+    (snapshot) =>
+      callback(
+        snapshot.docs.map((item) => {
+          const data = item.data() as any;
+          if (data && data.deletedAt === null) {
+            data.deletedAt = undefined;
+          }
+          return data as T;
+        }),
+      ),
     (error) =>
       console.error(`Firestore sync error on ${collectionName}`, error),
   );

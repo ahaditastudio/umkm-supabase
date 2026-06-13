@@ -7,11 +7,15 @@ import {
   Trash2,
   Upload,
   Wand2,
+  Receipt,
+  Package,
+  User,
 } from "lucide-react";
 import { ChangeEvent, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Card,
   CardContent,
@@ -30,7 +34,7 @@ import {
   restoreTransactionFirestore,
   seedDemoCompanyFirestore,
 } from "@/lib/firestore/company-service";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 
 export default function UtilitiesPage() {
@@ -345,138 +349,185 @@ export default function UtilitiesPage() {
             tahap lanjutan.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-xl bg-muted p-4">
-              <p className="text-sm text-muted-foreground">
-                Deleted Transactions
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/50 p-4 dark:border-zinc-800 dark:bg-zinc-900/10">
+              <p className="text-xs font-semibold text-muted-foreground">
+                Transaksi Terhapus
               </p>
-              <p className="mt-1 text-2xl font-bold">
+              <p className="mt-1.5 text-2xl font-bold tracking-tight">
                 {deletedTransactions.length}
               </p>
             </div>
-            <div className="rounded-xl bg-muted p-4">
-              <p className="text-sm text-muted-foreground">Deleted Customers</p>
-              <p className="mt-1 text-2xl font-bold">
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/50 p-4 dark:border-zinc-800 dark:bg-zinc-900/10">
+              <p className="text-xs font-semibold text-muted-foreground">Pelanggan Terhapus</p>
+              <p className="mt-1.5 text-2xl font-bold tracking-tight">
                 {deletedCustomers.length}
               </p>
             </div>
-            <div className="rounded-xl bg-muted p-4">
-              <p className="text-sm text-muted-foreground">Deleted Suppliers</p>
-              <p className="mt-1 text-2xl font-bold">
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/50 p-4 dark:border-zinc-800 dark:bg-zinc-900/10">
+              <p className="text-xs font-semibold text-muted-foreground">Pemasok Terhapus</p>
+              <p className="mt-1.5 text-2xl font-bold tracking-tight">
                 {deletedSuppliers.length}
               </p>
             </div>
           </div>
 
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th className="py-3 pr-4">Type</th>
-                  <th className="py-3 pr-4">Name/Description</th>
-                  <th className="py-3 pr-4">Deleted At</th>
-                  <th className="py-3 pr-4 text-right">Amount</th>
-                  <th className="py-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {deletedTransactions.map((transaction) => (
-                  <tr key={transaction.id} className="border-b last:border-0">
-                    <td className="py-3 pr-4">Transaction</td>
-                    <td className="py-3 pr-4">{transaction.description}</td>
-                    <td className="py-3 pr-4">
-                      {transaction.deletedAt
-                        ? formatDate(transaction.deletedAt)
-                        : "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-right">
-                      {formatCurrency(transaction.amount)}
-                    </td>
-                    <td className="py-3 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          if (appUser) {
-                            await restoreTransactionFirestore(
-                              appUser.companyId,
-                              transaction.id,
-                            );
-                          } else {
-                            store.restoreTransaction(transaction.id);
-                          }
-                        }}
-                      >
-                        <RotateCcw className="h-4 w-4" /> Restore
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+          <div className="space-y-6 pt-2">
+            {deletedTransactions.length === 0 && deletedCustomers.length === 0 && deletedSuppliers.length === 0 ? (
+              <EmptyState
+                title="Recycle Bin Kosong"
+                description="Tidak ada data transaksi atau kontak yang dihapus baru-baru ini."
+              />
+            ) : (
+              <>
+                {/* 1. Transactions List */}
+                {deletedTransactions.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
+                      <Receipt className="h-3.5 w-3.5" /> Transaksi ({deletedTransactions.length})
+                    </h3>
+                    <div className="rounded-xl border border-zinc-200/60 dark:border-zinc-800/50 overflow-hidden divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                      {deletedTransactions.map((transaction) => (
+                        <div key={transaction.id} className="group flex items-center justify-between p-3.5 transition hover:bg-zinc-50/30 dark:hover:bg-zinc-800/10">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="h-8 w-8 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center shrink-0">
+                              <Receipt className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate line-through opacity-70">
+                                {transaction.description}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5 font-medium">
+                                Dihapus: {transaction.deletedAt ? formatDate(transaction.deletedAt) : "-"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 shrink-0">
+                            <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
+                              {formatCurrency(transaction.amount)}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-[10px] font-semibold tracking-wide gap-1 shadow-sm px-2.5"
+                              onClick={async () => {
+                                if (appUser) {
+                                  await restoreTransactionFirestore(
+                                    appUser.companyId,
+                                    transaction.id,
+                                  );
+                                } else {
+                                  store.restoreTransaction(transaction.id);
+                                }
+                              }}
+                            >
+                              <RotateCcw className="h-3 w-3" /> Restore
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                {deletedCustomers.map((customer) => (
-                  <tr key={customer.id} className="border-b last:border-0">
-                    <td className="py-3 pr-4">Customer</td>
-                    <td className="py-3 pr-4">{customer.name}</td>
-                    <td className="py-3 pr-4">
-                      {customer.deletedAt
-                        ? formatDate(customer.deletedAt)
-                        : "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-right">-</td>
-                    <td className="py-3 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          if (appUser) {
-                            await restoreCustomerFirestore(
-                              appUser.companyId,
-                              customer.id,
-                            );
-                          } else {
-                            store.restoreCustomer(customer.id);
-                          }
-                        }}
-                      >
-                        <RotateCcw className="h-4 w-4" /> Restore
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {/* 2. Customers List */}
+                {deletedCustomers.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
+                      <User className="h-3.5 w-3.5" /> Pelanggan ({deletedCustomers.length})
+                    </h3>
+                    <div className="rounded-xl border border-zinc-200/60 dark:border-zinc-800/50 overflow-hidden divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                      {deletedCustomers.map((customer) => {
+                        const initial = customer.name ? customer.name.trim().charAt(0).toUpperCase() : "?";
+                        return (
+                          <div key={customer.id} className="group flex items-center justify-between p-3.5 transition hover:bg-zinc-50/30 dark:hover:bg-zinc-800/10">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="h-8 w-8 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center justify-center shrink-0">
+                                {initial}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate line-through opacity-70">
+                                  {customer.name}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5 font-medium">
+                                  Dihapus: {customer.deletedAt ? formatDate(customer.deletedAt) : "-"}
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-[10px] font-semibold tracking-wide gap-1 shadow-sm px-2.5 shrink-0"
+                              onClick={async () => {
+                                if (appUser) {
+                                  await restoreCustomerFirestore(
+                                    appUser.companyId,
+                                    customer.id,
+                                  );
+                                } else {
+                                  store.restoreCustomer(customer.id);
+                                }
+                              }}
+                            >
+                              <RotateCcw className="h-3 w-3" /> Restore
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
-                {deletedSuppliers.map((supplier) => (
-                  <tr key={supplier.id} className="border-b last:border-0">
-                    <td className="py-3 pr-4">Supplier</td>
-                    <td className="py-3 pr-4">{supplier.name}</td>
-                    <td className="py-3 pr-4">
-                      {supplier.deletedAt
-                        ? formatDate(supplier.deletedAt)
-                        : "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-right">-</td>
-                    <td className="py-3 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          if (appUser) {
-                            await restoreSupplierFirestore(
-                              appUser.companyId,
-                              supplier.id,
-                            );
-                          } else {
-                            store.restoreSupplier(supplier.id);
-                          }
-                        }}
-                      >
-                        <RotateCcw className="h-4 w-4" /> Restore
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                {/* 3. Suppliers List */}
+                {deletedSuppliers.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
+                      <Package className="h-3.5 w-3.5" /> Pemasok ({deletedSuppliers.length})
+                    </h3>
+                    <div className="rounded-xl border border-zinc-200/60 dark:border-zinc-800/50 overflow-hidden divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                      {deletedSuppliers.map((supplier) => {
+                        const initial = supplier.name ? supplier.name.trim().charAt(0).toUpperCase() : "?";
+                        return (
+                          <div key={supplier.id} className="group flex items-center justify-between p-3.5 transition hover:bg-zinc-50/30 dark:hover:bg-zinc-800/10">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="h-8 w-8 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center shrink-0">
+                                {initial}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate line-through opacity-70">
+                                  {supplier.name}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5 font-medium">
+                                  Dihapus: {supplier.deletedAt ? formatDate(supplier.deletedAt) : "-"}
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-[10px] font-semibold tracking-wide gap-1 shadow-sm px-2.5 shrink-0"
+                              onClick={async () => {
+                                if (appUser) {
+                                  await restoreSupplierFirestore(
+                                    appUser.companyId,
+                                    supplier.id,
+                                  );
+                                } else {
+                                  store.restoreSupplier(supplier.id);
+                                }
+                              }}
+                            >
+                              <RotateCcw className="h-3 w-3" /> Restore
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

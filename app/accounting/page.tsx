@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Lock, PlusCircle, BookOpen, Layers, ShieldCheck, History, CalendarDays } from "lucide-react";
+import { Loader2, Lock, PlusCircle, Pencil, BookOpen, Layers, ShieldCheck, History, CalendarDays } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,8 @@ import {
   addAccountingPeriodFirestore,
   closeCurrentPeriodFirestore,
   createOpeningBalanceFirestore,
+  updateAccountFirestore,
+  updateAccountingPeriodFirestore,
 } from "@/lib/firestore/company-service";
 import type { AccountType, NormalBalance } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -49,6 +51,8 @@ export default function AccountingPage() {
   const closeCurrentPeriod = useKasFlowStore((state) => state.closeCurrentPeriod);
   const addAccount = useKasFlowStore((state) => state.addAccount);
   const addAccountingPeriod = useKasFlowStore((state) => state.addAccountingPeriod);
+  const updateAccount = useKasFlowStore((state) => state.updateAccount);
+  const updateAccountingPeriod = useKasFlowStore((state) => state.updateAccountingPeriod);
 
   // Active Tab State
   const [activeTab, setActiveTab] = useState<TabType>("journal_ledger");
@@ -67,6 +71,13 @@ export default function AccountingPage() {
   const [newAccountType, setNewAccountType] = useState<AccountType>("asset");
   const [newAccountNormalBalance, setNewAccountNormalBalance] = useState<NormalBalance>("debit");
   const [addAccountLoading, setAddAccountLoading] = useState(false);
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+
+  // Edit accounting period state
+  const [editingPeriodId, setEditingPeriodId] = useState<string | null>(null);
+  const [editPeriodStartDate, setEditPeriodStartDate] = useState("");
+  const [editPeriodEndDate, setEditPeriodEndDate] = useState("");
+  const [editPeriodLoading, setEditPeriodLoading] = useState(false);
 
   // Add accounting period state
   const [periodStartDate, setPeriodStartDate] = useState("");
@@ -130,30 +141,114 @@ export default function AccountingPage() {
     }
     setAddAccountLoading(true);
     try {
-      if (appUser) {
-        await addAccountFirestore(
-          appUser.companyId,
+      if (editingAccountId) {
+        // Edit mode
+        if (appUser) {
+          await updateAccountFirestore(
+            appUser.companyId,
+            editingAccountId,
+            {
+              code: newAccountCode.trim(),
+              name: newAccountName.trim(),
+              type: newAccountType,
+              normalBalance: newAccountNormalBalance,
+            },
+          );
+        }
+        updateAccount(editingAccountId, {
+          code: newAccountCode.trim(),
+          name: newAccountName.trim(),
+          type: newAccountType,
+          normalBalance: newAccountNormalBalance,
+        });
+        toast.success(`Akun ${newAccountCode.trim()} berhasil diperbarui.`);
+        setEditingAccountId(null);
+      } else {
+        // Create mode
+        if (appUser) {
+          await addAccountFirestore(
+            appUser.companyId,
+            newAccountCode.trim(),
+            newAccountName.trim(),
+            newAccountType,
+            newAccountNormalBalance,
+          );
+        }
+        addAccount(
           newAccountCode.trim(),
           newAccountName.trim(),
           newAccountType,
           newAccountNormalBalance,
         );
+        toast.success(`Akun ${newAccountCode.trim()} berhasil ditambahkan ke COA.`);
       }
-      addAccount(
-        newAccountCode.trim(),
-        newAccountName.trim(),
-        newAccountType,
-        newAccountNormalBalance,
-      );
       setNewAccountCode("");
       setNewAccountName("");
-      toast.success(`Akun ${newAccountCode.trim()} berhasil ditambahkan ke COA.`);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Gagal menambah akun.",
+        error instanceof Error ? error.message : "Gagal menyimpan akun.",
       );
     } finally {
       setAddAccountLoading(false);
+    }
+  };
+
+  const openEditAccount = (accountId: string) => {
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) return;
+    setNewAccountCode(account.code);
+    setNewAccountName(account.name);
+    setNewAccountType(account.type);
+    setNewAccountNormalBalance(account.normalBalance);
+    setEditingAccountId(accountId);
+  };
+
+  const cancelEditAccount = () => {
+    setEditingAccountId(null);
+    setNewAccountCode("");
+    setNewAccountName("");
+    setNewAccountType("asset");
+    setNewAccountNormalBalance("debit");
+  };
+
+  const openEditPeriod = (periodId: string) => {
+    const period = accountingPeriods.find((p) => p.id === periodId);
+    if (!period) return;
+    setEditingPeriodId(periodId);
+    setEditPeriodStartDate(period.startDate);
+    setEditPeriodEndDate(period.endDate);
+  };
+
+  const handleUpdatePeriod = async () => {
+    if (!editPeriodStartDate || !editPeriodEndDate || !editingPeriodId) {
+      toast.error("Tanggal mulai dan akhir periode wajib diisi.");
+      return;
+    }
+    if (editPeriodStartDate >= editPeriodEndDate) {
+      toast.error("Tanggal mulai harus lebih awal dari tanggal akhir.");
+      return;
+    }
+    setEditPeriodLoading(true);
+    try {
+      if (appUser) {
+        await updateAccountingPeriodFirestore(
+          appUser.companyId,
+          editingPeriodId,
+          { startDate: editPeriodStartDate, endDate: editPeriodEndDate },
+        );
+      }
+      updateAccountingPeriod(editingPeriodId, {
+        startDate: editPeriodStartDate,
+        endDate: editPeriodEndDate,
+      });
+      toast.success("Periode akuntansi berhasil diperbarui.");
+      setEditingPeriodId(null);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Gagal memperbarui periode.",
+      );
+    } finally {
+      setEditPeriodLoading(false);
     }
   };
 
@@ -252,46 +347,63 @@ export default function AccountingPage() {
         {activeTab === "journal_ledger" && (
           <div className="grid gap-6 lg:grid-cols-2">
             {/* General Journal */}
-            <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden">
+            <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden flex flex-col h-full">
               <CardHeader className="border-b pb-4 mb-2">
                 <CardTitle>Jurnal Umum (General Journal)</CardTitle>
                 <CardDescription>Pencatatan kronologis seluruh double-entry debit dan kredit.</CardDescription>
               </CardHeader>
-              <CardContent className="px-0 py-0">
-                <div className="max-h-[500px] overflow-y-auto scrollbar-thin">
-                  <Table>
-                    <TableHeader className="bg-transparent">
-                      <TableRow>
-                        <TableHead>Tanggal</TableHead>
-                        <TableHead>Akun & Keterangan</TableHead>
-                        <TableHead className="text-right">Debit</TableHead>
-                        <TableHead className="text-right">Kredit</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {journalEntries.flatMap((journal) =>
-                        journal.lines.map((line, index) => (
-                          <TableRow key={`${journal.id}_${index}`}>
-                            {index === 0 ? (
-                              <TableCell className="font-semibold align-top" rowSpan={journal.lines.length}>
-                                {formatDate(journal.date)}
-                                <div className="text-[10px] text-muted-foreground font-normal mt-1">{journal.description}</div>
-                              </TableCell>
-                            ) : null}
-                            <TableCell className={cn("font-medium py-3 text-xs", line.credit > 0 ? "pl-6 text-zinc-550" : "")}>
-                              {getAccount(accounts, line.accountId)?.name ?? line.accountId}
-                            </TableCell>
-                            <TableCell className="text-right text-xs font-semibold text-zinc-900 dark:text-white py-3">
-                              {line.debit ? formatCurrency(line.debit) : "-"}
-                            </TableCell>
-                            <TableCell className="text-right text-xs font-semibold text-zinc-900 dark:text-white py-3">
-                              {line.credit ? formatCurrency(line.credit) : "-"}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
+              <CardContent className="p-4 flex-1">
+                <div className="max-h-[500px] overflow-y-auto space-y-4 pr-1 scrollbar-thin">
+                  {journalEntries.length ? (
+                    journalEntries.map((journal) => (
+                      <div key={journal.id} className="rounded-xl border border-zinc-200/60 bg-zinc-50/25 p-3.5 dark:border-zinc-800 dark:bg-zinc-900/10 space-y-3">
+                        {/* Header Jurnal */}
+                        <div className="flex justify-between items-start gap-2 border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
+                          <div>
+                            <p className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{journal.description}</p>
+                            <span className="text-[10px] text-muted-foreground font-medium">Ref: {journal.id}</span>
+                          </div>
+                          <Badge tone="muted" className="text-[9px] font-bold py-0.5 px-2">
+                            {formatDate(journal.date)}
+                          </Badge>
+                        </div>
+
+                        {/* Detail Debit/Kredit */}
+                        <div className="space-y-2 text-xs">
+                          {journal.lines.map((line, idx) => {
+                            const account = getAccount(accounts, line.accountId);
+                            const isCredit = line.credit > 0;
+                            return (
+                              <div key={idx} className="flex justify-between items-center gap-4">
+                                <span className={cn(
+                                  "font-medium",
+                                  isCredit ? "pl-5 text-muted-foreground italic flex items-center gap-1.5" : "text-zinc-800 dark:text-zinc-200"
+                                )}>
+                                  {isCredit && <span className="text-[10px] text-zinc-400">↳</span>}
+                                  {account ? `${account.code} · ${account.name}` : line.accountId}
+                                </span>
+                                <span className={cn(
+                                  "font-semibold tabular-nums shrink-0",
+                                  isCredit ? "text-zinc-500 font-medium" : "text-zinc-800 dark:text-zinc-200"
+                                )}>
+                                  {isCredit ? (
+                                    <span>(K) {formatCurrency(line.credit)}</span>
+                                  ) : (
+                                    <span>(D) {formatCurrency(line.debit)}</span>
+                                  )}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <EmptyState
+                      title="Jurnal kosong"
+                      description="Belum ada pencatatan jurnal akuntansi otomatis atau manual."
+                    />
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -341,7 +453,10 @@ export default function AccountingPage() {
                             <TableCell className="text-right text-xs font-bold text-zinc-900 dark:text-white">
                               {entry.credit ? formatCurrency(entry.credit) : "-"}
                             </TableCell>
-                            <TableCell className="text-right text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                            <TableCell className={cn(
+                              "text-right text-xs font-extrabold",
+                              entry.balance > 0 ? "text-emerald-600 dark:text-emerald-400" : entry.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
+                            )}>
                               {formatCurrency(entry.balance)}
                             </TableCell>
                           </TableRow>
@@ -491,11 +606,11 @@ export default function AccountingPage() {
           <div className="space-y-6">
             {/* Form & COA list */}
             <div className="grid gap-6 lg:grid-cols-3">
-              {/* Tambah COA */}
+              {/* Tambah/Edit COA */}
               <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm h-fit">
                 <CardHeader className="border-b pb-4 mb-4">
-                  <CardTitle>Tambah Kode Akun (COA)</CardTitle>
-                  <CardDescription>Buat klasifikasi pembukuan baru.</CardDescription>
+                  <CardTitle>{editingAccountId ? "Edit Kode Akun (COA)" : "Tambah Kode Akun (COA)"}</CardTitle>
+                  <CardDescription>{editingAccountId ? "Perbarui informasi akun." : "Buat klasifikasi pembukuan baru."}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleAddAccount} className="space-y-4">
@@ -552,8 +667,18 @@ export default function AccountingPage() {
                       ) : (
                         <PlusCircle className="h-4 w-4" />
                       )}{" "}
-                      Daftarkan Akun
+                      {editingAccountId ? "Simpan Perubahan" : "Daftarkan Akun"}
                     </Button>
+                    {editingAccountId && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={cancelEditAccount}
+                        className="w-full font-semibold text-xs tracking-wide h-9.5 mt-1"
+                      >
+                        Batal Edit
+                      </Button>
+                    )}
                   </form>
                 </CardContent>
               </Card>
@@ -606,30 +731,63 @@ export default function AccountingPage() {
                   <CardTitle>Semua Periode Terdaftar</CardTitle>
                   <CardDescription>Daftar riwayat audit masa tahun buku.</CardDescription>
                 </CardHeader>
-                <CardContent className="px-0 py-0">
-                  <div className="max-h-80 overflow-y-auto scrollbar-thin">
-                    <Table>
-                      <TableHeader className="bg-transparent">
-                        <TableRow>
-                          <TableHead>Rentang Tanggal</TableHead>
-                          <TableHead className="text-right">Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {accountingPeriods.map((period) => (
-                          <TableRow key={period.id}>
-                            <TableCell className="font-semibold text-xs py-3">
+                <CardContent className="p-0">
+                  <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/50 scrollbar-thin">
+                    {accountingPeriods.map((period) => (
+                      <div key={period.id} className="flex items-center justify-between p-3.5 transition hover:bg-zinc-50/30 dark:hover:bg-zinc-800/10">
+                        {editingPeriodId === period.id ? (
+                          <div className="flex items-center gap-2 w-full">
+                            <Input
+                              type="date"
+                              value={editPeriodStartDate}
+                              onChange={(e) => setEditPeriodStartDate(e.target.value)}
+                              className="h-8 text-xs flex-1"
+                            />
+                            <span className="text-xs text-muted-foreground">—</span>
+                            <Input
+                              type="date"
+                              value={editPeriodEndDate}
+                              onChange={(e) => setEditPeriodEndDate(e.target.value)}
+                              className="h-8 text-xs flex-1"
+                            />
+                            <Button
+                              onClick={handleUpdatePeriod}
+                              disabled={editPeriodLoading}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-8 px-3 shrink-0"
+                            >
+                              {editPeriodLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Simpan"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => setEditingPeriodId(null)}
+                              className="text-xs h-8 px-3 shrink-0"
+                            >
+                              Batal
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-semibold text-xs text-zinc-800 dark:text-zinc-200">
                               {formatDate(period.startDate)} — {formatDate(period.endDate)}
-                            </TableCell>
-                            <TableCell className="text-right py-3 pr-6">
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {period.status === "open" && (
+                                <button
+                                  onClick={() => openEditPeriod(period.id)}
+                                  className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
+                                  title="Edit Periode"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                               <Badge tone={period.status === "open" ? "green" : "red"}>
                                 {period.status}
                               </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -643,7 +801,7 @@ export default function AccountingPage() {
               </CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {accounts.map((account) => (
-                  <div key={account.id} className="rounded-xl border border-zinc-200/60 p-3 bg-zinc-50/30 flex items-start justify-between dark:border-zinc-800">
+                  <div key={account.id} className="group rounded-xl border border-zinc-200/60 p-3 bg-zinc-50/30 flex items-start justify-between dark:border-zinc-800">
                     <div className="space-y-1">
                       <p className="font-bold text-xs text-foreground font-mono">
                         {account.code}
@@ -653,7 +811,16 @@ export default function AccountingPage() {
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
-                      <Badge tone="muted" className="text-[9px]">{account.type}</Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge tone="muted" className="text-[9px]">{account.type}</Badge>
+                        <button
+                          onClick={() => openEditAccount(account.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
+                          title="Edit Akun"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      </div>
                       <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">Bal: {account.normalBalance}</span>
                     </div>
                   </div>

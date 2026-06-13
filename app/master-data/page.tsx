@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Trash2, PlusCircle, User, Users, FolderTree, Landmark } from "lucide-react";
+import { Loader2, Trash2, PlusCircle, Pencil, User, Users, FolderTree, Landmark, Wallet, Smartphone } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
@@ -18,14 +18,6 @@ import { Select } from "@/components/ui/select";
 import { Drawer } from "@/components/ui/drawer";
 import { ConfirmModal } from "@/components/ui/modal";
 import { toast } from "@/lib/toast";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/data-table";
 import { getAccount } from "@/lib/accounting";
 import {
   addCashAccountFirestore,
@@ -36,6 +28,10 @@ import {
   deleteCategoryFirestore,
   softDeleteCustomerFirestore,
   softDeleteSupplierFirestore,
+  updateCategoryFirestore,
+  updateCashAccountFirestore,
+  updateCustomerFirestore,
+  updateSupplierFirestore,
 } from "@/lib/firestore/company-service";
 import type { CashAccountType } from "@/lib/types";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
@@ -56,8 +52,12 @@ export default function MasterDataPage() {
   const softDeleteSupplier = useKasFlowStore((state) => state.softDeleteSupplier);
   const addCategory = useKasFlowStore((state) => state.addCategory);
   const deleteCategory = useKasFlowStore((state) => state.deleteCategory);
+  const updateCategory = useKasFlowStore((state) => state.updateCategory);
   const addCashAccount = useKasFlowStore((state) => state.addCashAccount);
   const deleteCashAccount = useKasFlowStore((state) => state.deleteCashAccount);
+  const updateCashAccount = useKasFlowStore((state) => state.updateCashAccount);
+  const updateCustomer = useKasFlowStore((state) => state.updateCustomer);
+  const updateSupplier = useKasFlowStore((state) => state.updateSupplier);
 
   // Active Tab State
   const [activeTab, setActiveTab] = useState<TabType>("categories");
@@ -66,6 +66,11 @@ export default function MasterDataPage() {
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
   const [isCashDrawerOpen, setIsCashDrawerOpen] = useState(false);
   const [isContactDrawerOpen, setIsContactDrawerOpen] = useState(false);
+
+  // Drawer states: null = create mode, string = edit mode (entity id)
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCashAccountId, setEditingCashAccountId] = useState<string | null>(null);
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
 
   // Delete Confirmation Modal State
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -100,6 +105,40 @@ export default function MasterDataPage() {
     (a) => a.isCash || a.type === "asset"
   );
 
+  // Helper: open category drawer in edit mode
+  const openEditCategory = (categoryId: string) => {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return;
+    setCategoryName(category.name);
+    setCategoryType(category.type);
+    setCategoryAccountId(category.accountId);
+    setEditingCategoryId(categoryId);
+    setIsCategoryDrawerOpen(true);
+  };
+
+  const openEditCashAccount = (cashAccountId: string) => {
+    const ca = cashAccounts.find((c) => c.id === cashAccountId);
+    if (!ca) return;
+    setCashName(ca.name);
+    setCashType(ca.type);
+    setCashLinkedAccountId(ca.accountId);
+    setEditingCashAccountId(cashAccountId);
+    setIsCashDrawerOpen(true);
+  };
+
+  const openEditContact = (contactId: string, type: "customer" | "supplier") => {
+    const entity = type === "customer"
+      ? customers.find((c) => c.id === contactId)
+      : suppliers.find((s) => s.id === contactId);
+    if (!entity) return;
+    setContactType(type);
+    setContactName(entity.name);
+    setContactEmail(entity.email ?? "");
+    setContactPhone(entity.phone ?? "");
+    setEditingContactId(contactId);
+    setIsContactDrawerOpen(true);
+  };
+
   const handleAddCategory = async (event: FormEvent) => {
     event.preventDefault();
     if (!categoryName.trim() || !categoryAccountId) {
@@ -108,21 +147,40 @@ export default function MasterDataPage() {
     }
     setCategoryLoading(true);
     try {
-      if (appUser) {
-        await addCategoryFirestore(
-          appUser.companyId,
-          categoryName.trim(),
-          categoryType,
-          categoryAccountId
-        );
+      if (editingCategoryId) {
+        // Edit mode
+        if (appUser) {
+          await updateCategoryFirestore(appUser.companyId, editingCategoryId, {
+            name: categoryName.trim(),
+            type: categoryType,
+            accountId: categoryAccountId,
+          });
+        }
+        updateCategory(editingCategoryId, {
+          name: categoryName.trim(),
+          type: categoryType,
+          accountId: categoryAccountId,
+        });
+        toast.success("Kategori berhasil diperbarui.");
+        setEditingCategoryId(null);
+      } else {
+        // Create mode
+        if (appUser) {
+          await addCategoryFirestore(
+            appUser.companyId,
+            categoryName.trim(),
+            categoryType,
+            categoryAccountId
+          );
+        }
+        addCategory(categoryName.trim(), categoryType, categoryAccountId);
+        toast.success("Kategori berhasil ditambahkan.");
       }
-      addCategory(categoryName.trim(), categoryType, categoryAccountId);
       setCategoryName("");
-      toast.success("Kategori berhasil ditambahkan.");
       setIsCategoryDrawerOpen(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Gagal menambah kategori."
+        error instanceof Error ? error.message : "Gagal menyimpan kategori."
       );
     } finally {
       setCategoryLoading(false);
@@ -188,21 +246,40 @@ export default function MasterDataPage() {
     }
     setCashLoading(true);
     try {
-      if (appUser) {
-        await addCashAccountFirestore(
-          appUser.companyId,
-          cashName.trim(),
-          cashType,
-          cashLinkedAccountId
-        );
+      if (editingCashAccountId) {
+        // Edit mode
+        if (appUser) {
+          await updateCashAccountFirestore(appUser.companyId, editingCashAccountId, {
+            name: cashName.trim(),
+            type: cashType,
+            accountId: cashLinkedAccountId,
+          });
+        }
+        updateCashAccount(editingCashAccountId, {
+          name: cashName.trim(),
+          type: cashType,
+          accountId: cashLinkedAccountId,
+        });
+        toast.success("Dompet/Bank berhasil diperbarui.");
+        setEditingCashAccountId(null);
+      } else {
+        // Create mode
+        if (appUser) {
+          await addCashAccountFirestore(
+            appUser.companyId,
+            cashName.trim(),
+            cashType,
+            cashLinkedAccountId
+          );
+        }
+        addCashAccount(cashName.trim(), cashType, cashLinkedAccountId);
+        toast.success("Dompet/Bank berhasil ditambahkan.");
       }
-      addCashAccount(cashName.trim(), cashType, cashLinkedAccountId);
       setCashName("");
-      toast.success("Dompet/Bank berhasil ditambahkan.");
       setIsCashDrawerOpen(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Gagal menambah cash account."
+        error instanceof Error ? error.message : "Gagal menyimpan cash account."
       );
     } finally {
       setCashLoading(false);
@@ -217,20 +294,44 @@ export default function MasterDataPage() {
     }
     setContactLoading(true);
     try {
-      if (contactType === "customer") {
-        if (appUser) {
-          await addCustomerFirestore(appUser.companyId, contactName.trim());
+      if (editingContactId) {
+        // Edit mode
+        const updateData = {
+          name: contactName.trim(),
+          email: contactEmail.trim() || undefined,
+          phone: contactPhone.trim() || undefined,
+        };
+        if (contactType === "customer") {
+          if (appUser) {
+            await updateCustomerFirestore(appUser.companyId, editingContactId, updateData);
+          }
+          updateCustomer(editingContactId, updateData);
+          toast.success(`Pelanggan ${contactName.trim()} berhasil diperbarui.`);
         } else {
-          addCustomer(contactName.trim());
+          if (appUser) {
+            await updateSupplierFirestore(appUser.companyId, editingContactId, updateData);
+          }
+          updateSupplier(editingContactId, updateData);
+          toast.success(`Pemasok ${contactName.trim()} berhasil diperbarui.`);
         }
-        toast.success(`Pelanggan ${contactName.trim()} berhasil ditambahkan.`);
+        setEditingContactId(null);
       } else {
-        if (appUser) {
-          await addSupplierFirestore(appUser.companyId, contactName.trim());
+        // Create mode
+        if (contactType === "customer") {
+          if (appUser) {
+            await addCustomerFirestore(appUser.companyId, contactName.trim());
+          } else {
+            addCustomer(contactName.trim());
+          }
+          toast.success(`Pelanggan ${contactName.trim()} berhasil ditambahkan.`);
         } else {
-          addSupplier(contactName.trim());
+          if (appUser) {
+            await addSupplierFirestore(appUser.companyId, contactName.trim());
+          } else {
+            addSupplier(contactName.trim());
+          }
+          toast.success(`Pemasok ${contactName.trim()} berhasil ditambahkan.`);
         }
-        toast.success(`Pemasok ${contactName.trim()} berhasil ditambahkan.`);
       }
       setContactName("");
       setContactEmail("");
@@ -238,7 +339,7 @@ export default function MasterDataPage() {
       setIsContactDrawerOpen(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Gagal menambah kontak."
+        error instanceof Error ? error.message : "Gagal menyimpan kontak."
       );
     } finally {
       setContactLoading(false);
@@ -263,6 +364,10 @@ export default function MasterDataPage() {
         {activeTab === "categories" && (
           <Button
             onClick={() => {
+              setEditingCategoryId(null);
+              setCategoryName("");
+              setCategoryType("income");
+              setCategoryAccountId("");
               setIsCategoryDrawerOpen(true);
             }}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs gap-1.5 h-9 self-start sm:self-auto"
@@ -273,6 +378,10 @@ export default function MasterDataPage() {
         {activeTab === "cash_accounts" && (
           <Button
             onClick={() => {
+              setEditingCashAccountId(null);
+              setCashName("");
+              setCashType("cash");
+              setCashLinkedAccountId("");
               setIsCashDrawerOpen(true);
             }}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs gap-1.5 h-9 self-start sm:self-auto"
@@ -283,6 +392,11 @@ export default function MasterDataPage() {
         {activeTab === "contacts" && (
           <Button
             onClick={() => {
+              setEditingContactId(null);
+              setContactType("customer");
+              setContactName("");
+              setContactEmail("");
+              setContactPhone("");
               setIsContactDrawerOpen(true);
             }}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs gap-1.5 h-9 self-start sm:self-auto"
@@ -338,149 +452,205 @@ export default function MasterDataPage() {
       {/* Tab Contents */}
       <div className="space-y-6">
         {activeTab === "categories" && (
-          <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {categories.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nama Kategori</TableHead>
-                    <TableHead>Jenis Aliran</TableHead>
-                    <TableHead>Terhubung ke Kode Akun (COA)</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {categories.map((category) => {
-                    const mappedAccount = getAccount(accounts, category.accountId);
-                    return (
-                      <TableRow key={category.id}>
-                        <TableCell className="font-semibold text-zinc-955 dark:text-white">
-                          {category.name}
-                        </TableCell>
-                        <TableCell>
-                          {category.type === "income" ? (
-                            <Badge tone="green">Pemasukan (Income)</Badge>
-                          ) : (
-                            <Badge tone="red">Pengeluaran (Expense)</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="font-mono text-zinc-550 text-xs">
-                          {mappedAccount ? `${mappedAccount.code} — ${mappedAccount.name}` : "-"}
-                        </TableCell>
-                        <TableCell className="text-right">
+              categories.map((category) => {
+                const mappedAccount = getAccount(accounts, category.accountId);
+                return (
+                  <Card key={category.id} className="group relative border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden p-4 hover:shadow-md transition duration-200 flex flex-col justify-between min-h-[120px]">
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className={cn(
+                            "p-2 rounded-lg shrink-0",
+                            category.type === "income" ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                          )}>
+                            <FolderTree className="h-4 w-4" />
+                          </div>
+                          <p className="font-semibold text-sm text-zinc-800 dark:text-zinc-200">
+                            {category.name}
+                          </p>
+                        </div>
+                        {/* Action buttons (hover) */}
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center pr-1 gap-0.5">
+                          <button
+                            onClick={() => openEditCategory(category.id)}
+                            className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
+                            title="Edit Kategori"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
                           <button
                             onClick={() => openDeleteConfirmation("category", category.id)}
-                            className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-lg transition"
+                            className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-md transition"
                             title="Hapus Kategori"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                        </div>
+                      </div>
+
+                      {/* Details */}
+                      <div className="flex flex-col gap-1.5 text-xs">
+                        <div className="flex items-center gap-1.5 text-muted-foreground font-medium">
+                          <span className="text-[10px] uppercase font-bold tracking-wider">Aliran:</span>
+                          {category.type === "income" ? (
+                            <Badge tone="green">Pemasukan</Badge>
+                          ) : (
+                            <Badge tone="red">Pengeluaran</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/50 text-[10px] text-muted-foreground font-mono flex items-center gap-1">
+                      <span className="font-semibold">COA:</span>
+                      <span className="truncate">{mappedAccount ? `${mappedAccount.code} — ${mappedAccount.name}` : "-"}</span>
+                    </div>
+                  </Card>
+                );
+              })
             ) : (
-              <EmptyState
-                title="Kategori kosong"
-                description="Buat kategori transaksi baru untuk memetakan pos pengeluaran dan pendapatan Anda."
-              />
+              <div className="col-span-full">
+                <EmptyState
+                  title="Kategori kosong"
+                  description="Buat kategori transaksi baru untuk memetakan pos pengeluaran dan pendapatan Anda."
+                />
+              </div>
             )}
-          </Card>
+          </div>
         )}
 
         {activeTab === "cash_accounts" && (
-          <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {cashAccounts.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nama Dompet / Bank</TableHead>
-                    <TableHead>Tipe Dompet</TableHead>
-                    <TableHead>Terhubung ke Akun COA</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {cashAccounts.map((cashAccount) => {
-                    const mappedAccount = getAccount(accounts, cashAccount.accountId);
-                    return (
-                      <TableRow key={cashAccount.id}>
-                        <TableCell className="font-semibold text-zinc-955 dark:text-white">
-                          {cashAccount.name}
-                        </TableCell>
-                        <TableCell>
-                          <span className="capitalize font-semibold text-xs">{cashAccount.type}</span>
-                        </TableCell>
-                        <TableCell className="font-mono text-zinc-550 text-xs">
-                          {mappedAccount ? `${mappedAccount.code} — ${mappedAccount.name}` : "-"}
-                        </TableCell>
-                        <TableCell className="text-right">
+              cashAccounts.map((cashAccount) => {
+                const mappedAccount = getAccount(accounts, cashAccount.accountId);
+
+                // Icon selection based on cash account type
+                const typeInfo = {
+                  cash: { icon: Wallet, bg: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+                  bank: { icon: Landmark, bg: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400" },
+                  ewallet: { icon: Smartphone, bg: "bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400" },
+                }[cashAccount.type] || { icon: Landmark, bg: "bg-zinc-50 dark:bg-zinc-800/50 text-zinc-650" };
+
+                const TypeIcon = typeInfo.icon;
+
+                return (
+                  <Card key={cashAccount.id} className="group relative border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden p-4 hover:shadow-md transition duration-200 flex flex-col justify-between min-h-[120px]">
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className={cn("p-2 rounded-lg shrink-0", typeInfo.bg)}>
+                            <TypeIcon className="h-4 w-4" />
+                          </div>
+                          <p className="font-semibold text-sm text-zinc-800 dark:text-zinc-200">
+                            {cashAccount.name}
+                          </p>
+                        </div>
+                        {/* Action buttons (hover) */}
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center pr-1 gap-0.5">
+                          <button
+                            onClick={() => openEditCashAccount(cashAccount.id)}
+                            className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
+                            title="Edit Dompet/Bank"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
                           <button
                             onClick={() => openDeleteConfirmation("cash", cashAccount.id)}
-                            className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-lg transition"
+                            className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-md transition"
                             title="Hapus Dompet/Bank"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                        </div>
+                      </div>
+
+                      {/* Details */}
+                      <div className="flex flex-col gap-1.5 text-xs">
+                        <div className="flex items-center gap-1.5 text-muted-foreground font-medium">
+                          <span className="text-[10px] uppercase font-bold tracking-wider">Tipe:</span>
+                          <span className="capitalize font-semibold text-zinc-750 dark:text-zinc-350 text-xs">
+                            {cashAccount.type === "cash" ? "Kas Fisik" : cashAccount.type === "bank" ? "Transfer Bank" : "E-Wallet"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/50 text-[10px] text-muted-foreground font-mono flex items-center gap-1">
+                      <span className="font-semibold">COA:</span>
+                      <span className="truncate">{mappedAccount ? `${mappedAccount.code} — ${mappedAccount.name}` : "-"}</span>
+                    </div>
+                  </Card>
+                );
+              })
             ) : (
-              <EmptyState
-                title="Dompet Kas kosong"
-                description="Daftarkan rekening bank atau kas fisik toko Anda untuk memulai pelacakan dana."
-              />
+              <div className="col-span-full">
+                <EmptyState
+                  title="Dompet Kas kosong"
+                  description="Daftarkan rekening bank atau kas fisik toko Anda untuk memulai pelacakan dana."
+                />
+              </div>
             )}
-          </Card>
+          </div>
         )}
 
         {activeTab === "contacts" && (
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Pelanggan Card */}
-            <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm">
-              <CardHeader className="border-b pb-4 mb-2">
-                <CardTitle className="flex items-center gap-2 text-xs">
+            <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden">
+              <CardHeader className="border-b border-zinc-100 dark:border-zinc-800/50 pb-4 mb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
                   <User className="h-4 w-4 text-emerald-500" /> Daftar Pelanggan (Customers)
                 </CardTitle>
                 <CardDescription>Entitas relasi pemasukan dana bisnis Anda.</CardDescription>
               </CardHeader>
-              <CardContent className="px-0 py-0">
+              <CardContent className="p-0">
                 {customers.length ? (
-                  <div className="max-h-96 overflow-y-auto scrollbar-thin">
-                    <Table>
-                      <TableHeader className="bg-transparent">
-                        <TableRow>
-                          <TableHead>Nama Pelanggan</TableHead>
-                          <TableHead className="text-right">Aksi</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {customers.map((customer) => (
-                          <TableRow key={customer.id} className={customer.deletedAt ? "opacity-55" : ""}>
-                            <TableCell className="font-semibold text-zinc-955 dark:text-white py-3">
-                              {customer.name}
-                            </TableCell>
-                            <TableCell className="text-right py-3 pr-6">
-                              {customer.deletedAt ? (
-                                <Badge tone="red">Deleted</Badge>
-                              ) : (
+                  <div className="max-h-[420px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/50 scrollbar-thin">
+                    {customers.map((customer) => {
+                      const isDeleted = customer.deletedAt != null;
+                      const initial = customer.name ? customer.name.trim().charAt(0).toUpperCase() : "?";
+                      return (
+                        <div key={customer.id} className={cn("group flex items-center justify-between p-3.5 transition duration-150 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10", isDeleted && "opacity-45")}>
+                          <div className="flex items-center gap-3 min-w-0">
+                            {/* Initials Avatar */}
+                            <div className="h-8 w-8 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center justify-center shrink-0">
+                              {initial}
+                            </div>
+                            <div className="min-w-0">
+                              <p className={cn("text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate", isDeleted && "line-through text-muted-foreground")}>
+                                {customer.name}
+                              </p>
+                              <span className="text-[10px] text-muted-foreground">ID: {customer.id}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isDeleted ? (
+                              <Badge tone="red">Deleted</Badge>
+                            ) : (
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 pr-1 flex items-center gap-0.5">
+                                <button
+                                  onClick={() => openEditContact(customer.id, "customer")}
+                                  className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
+                                  title="Edit Pelanggan"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
                                 <button
                                   onClick={() => openDeleteConfirmation("customer", customer.id)}
-                                  className="p-1 text-muted-foreground hover:text-rose-650 transition rounded-lg"
+                                  className="p-1 hover:bg-red-50 dark:hover:bg-red-955/20 text-rose-600 rounded-md transition"
+                                  title="Hapus Pelanggan"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="p-6">
@@ -494,45 +664,58 @@ export default function MasterDataPage() {
             </Card>
 
             {/* Pemasok Card */}
-            <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm">
-              <CardHeader className="border-b pb-4 mb-2">
-                <CardTitle className="flex items-center gap-2 text-xs">
+            <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden">
+              <CardHeader className="border-b border-zinc-100 dark:border-zinc-800/50 pb-4 mb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
                   <User className="h-4 w-4 text-rose-500" /> Daftar Pemasok (Suppliers)
                 </CardTitle>
                 <CardDescription>Entitas relasi pengeluaran beban belanja.</CardDescription>
               </CardHeader>
-              <CardContent className="px-0 py-0">
+              <CardContent className="p-0">
                 {suppliers.length ? (
-                  <div className="max-h-96 overflow-y-auto scrollbar-thin">
-                    <Table>
-                      <TableHeader className="bg-transparent">
-                        <TableRow>
-                          <TableHead>Nama Pemasok</TableHead>
-                          <TableHead className="text-right">Aksi</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {suppliers.map((supplier) => (
-                          <TableRow key={supplier.id} className={supplier.deletedAt ? "opacity-55" : ""}>
-                            <TableCell className="font-semibold text-zinc-955 dark:text-white py-3">
-                              {supplier.name}
-                            </TableCell>
-                            <TableCell className="text-right py-3 pr-6">
-                              {supplier.deletedAt ? (
-                                <Badge tone="red">Deleted</Badge>
-                              ) : (
+                  <div className="max-h-[420px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/50 scrollbar-thin">
+                    {suppliers.map((supplier) => {
+                      const isDeleted = supplier.deletedAt != null;
+                      const initial = supplier.name ? supplier.name.trim().charAt(0).toUpperCase() : "?";
+                      return (
+                        <div key={supplier.id} className={cn("group flex items-center justify-between p-3.5 transition duration-150 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10", isDeleted && "opacity-45")}>
+                          <div className="flex items-center gap-3 min-w-0">
+                            {/* Initials Avatar */}
+                            <div className="h-8 w-8 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center shrink-0">
+                              {initial}
+                            </div>
+                            <div className="min-w-0">
+                              <p className={cn("text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate", isDeleted && "line-through text-muted-foreground")}>
+                                {supplier.name}
+                              </p>
+                              <span className="text-[10px] text-muted-foreground">ID: {supplier.id}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isDeleted ? (
+                              <Badge tone="red">Deleted</Badge>
+                            ) : (
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 pr-1 flex items-center gap-0.5">
+                                <button
+                                  onClick={() => openEditContact(supplier.id, "supplier")}
+                                  className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
+                                  title="Edit Pemasok"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
                                 <button
                                   onClick={() => openDeleteConfirmation("supplier", supplier.id)}
-                                  className="p-1 text-muted-foreground hover:text-rose-650 transition rounded-lg"
+                                  className="p-1 hover:bg-red-50 dark:hover:bg-red-955/20 text-rose-600 rounded-md transition"
+                                  title="Hapus Pemasok"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="p-6">
@@ -548,12 +731,12 @@ export default function MasterDataPage() {
         )}
       </div>
 
-      {/* Category Add Drawer */}
+      {/* Category Add/Edit Drawer */}
       <Drawer
         open={isCategoryDrawerOpen}
-        onClose={() => setIsCategoryDrawerOpen(false)}
-        title="Tambah Kategori Baru"
-        description="Buat klasifikasi transaksi untuk pemetaan jurnal ledger yang tepat."
+        onClose={() => { setIsCategoryDrawerOpen(false); setEditingCategoryId(null); }}
+        title={editingCategoryId ? "Edit Kategori" : "Tambah Kategori Baru"}
+        description={editingCategoryId ? "Perbarui informasi kategori transaksi." : "Buat klasifikasi transaksi untuk pemetaan jurnal ledger yang tepat."}
       >
         <form onSubmit={handleAddCategory} className="space-y-4">
           <div className="space-y-1">
@@ -596,7 +779,7 @@ export default function MasterDataPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setIsCategoryDrawerOpen(false)}
+              onClick={() => { setIsCategoryDrawerOpen(false); setEditingCategoryId(null); }}
               className="flex-1 text-xs font-semibold h-9"
             >
               Batal
@@ -606,18 +789,18 @@ export default function MasterDataPage() {
               loading={categoryLoading}
               className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs h-9"
             >
-              Tambah Kategori
+              {editingCategoryId ? "Simpan Perubahan" : "Tambah Kategori"}
             </Button>
           </div>
         </form>
       </Drawer>
 
-      {/* Cash Account Add Drawer */}
+      {/* Cash Account Add/Edit Drawer */}
       <Drawer
         open={isCashDrawerOpen}
-        onClose={() => setIsCashDrawerOpen(false)}
-        title="Daftarkan Rekening Kas/Bank"
-        description="Hubungkan entitas dompet fisik, rekening bank, atau e-wallet ke Chart of Accounts."
+        onClose={() => { setIsCashDrawerOpen(false); setEditingCashAccountId(null); }}
+        title={editingCashAccountId ? "Edit Rekening Kas/Bank" : "Daftarkan Rekening Kas/Bank"}
+        description={editingCashAccountId ? "Perbarui informasi dompet atau rekening bank." : "Hubungkan entitas dompet fisik, rekening bank, atau e-wallet ke Chart of Accounts."}
       >
         <form onSubmit={handleAddCashAccount} className="space-y-4">
           <div className="space-y-1">
@@ -661,7 +844,7 @@ export default function MasterDataPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setIsCashDrawerOpen(false)}
+              onClick={() => { setIsCashDrawerOpen(false); setEditingCashAccountId(null); }}
               className="flex-1 text-xs font-semibold h-9"
             >
               Batal
@@ -671,18 +854,18 @@ export default function MasterDataPage() {
               loading={cashLoading}
               className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs h-9"
             >
-              Daftarkan Kas
+              {editingCashAccountId ? "Simpan Perubahan" : "Daftarkan Kas"}
             </Button>
           </div>
         </form>
       </Drawer>
 
-      {/* Contact Add Drawer */}
+      {/* Contact Add/Edit Drawer */}
       <Drawer
         open={isContactDrawerOpen}
-        onClose={() => setIsContactDrawerOpen(false)}
-        title="Tambah Relasi Kontak Baru"
-        description="Daftarkan pelanggan atau pemasok bisnis ke dalam database relasi."
+        onClose={() => { setIsContactDrawerOpen(false); setEditingContactId(null); }}
+        title={editingContactId ? "Edit Relasi Kontak" : "Tambah Relasi Kontak Baru"}
+        description={editingContactId ? "Perbarui informasi pelanggan atau pemasok." : "Daftarkan pelanggan atau pemasok bisnis ke dalam database relasi."}
       >
         <form onSubmit={handleAddContact} className="space-y-4">
           <div className="space-y-1">
@@ -729,7 +912,7 @@ export default function MasterDataPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setIsContactDrawerOpen(false)}
+              onClick={() => { setIsContactDrawerOpen(false); setEditingContactId(null); }}
               className="flex-1 text-xs font-semibold h-9"
             >
               Batal
@@ -739,7 +922,7 @@ export default function MasterDataPage() {
               loading={contactLoading}
               className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs h-9"
             >
-              Simpan Kontak
+              {editingContactId ? "Simpan Perubahan" : "Simpan Kontak"}
             </Button>
           </div>
         </form>

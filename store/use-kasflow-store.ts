@@ -124,6 +124,30 @@ export type KasFlowState = {
   restoreCustomer: (customerId: string) => void;
   restoreSupplier: (supplierId: string) => void;
   restoreFromBackup: (data: Partial<KasFlowState>) => void;
+  updateCategory: (
+    categoryId: string,
+    data: Partial<Pick<Category, "name" | "type" | "accountId">>,
+  ) => void;
+  updateCashAccount: (
+    cashAccountId: string,
+    data: Partial<Pick<CashAccount, "name" | "type" | "accountId">>,
+  ) => void;
+  updateCustomer: (
+    customerId: string,
+    data: Partial<Pick<Customer, "name" | "phone" | "email">>,
+  ) => void;
+  updateSupplier: (
+    supplierId: string,
+    data: Partial<Pick<Supplier, "name" | "phone" | "email">>,
+  ) => void;
+  updateAccount: (
+    accountId: string,
+    data: Partial<Pick<Account, "code" | "name" | "type" | "normalBalance">>,
+  ) => void;
+  updateAccountingPeriod: (
+    periodId: string,
+    data: Partial<Pick<AccountingPeriod, "startDate" | "endDate">>,
+  ) => void;
 };
 
 const openingJournal = createOpeningBalanceJournal();
@@ -593,6 +617,68 @@ export const useKasFlowStore = create<KasFlowState>()(
           ),
           auditLogs: [
             audit("restore", "recycle_bin", { supplierId }),
+            ...state.auditLogs,
+          ],
+        })),
+      updateCategory: (categoryId, data) =>
+        set((state) => ({
+          categories: state.categories.map((c) =>
+            c.id === categoryId ? { ...c, ...data } : c,
+          ),
+          auditLogs: [
+            audit("update", "account_categories", data, {
+              categoryId,
+            }),
+            ...state.auditLogs,
+          ],
+        })),
+      updateCashAccount: (cashAccountId, data) =>
+        set((state) => ({
+          cashAccounts: state.cashAccounts.map((c) =>
+            c.id === cashAccountId ? { ...c, ...data } : c,
+          ),
+          auditLogs: [
+            audit("update", "cash_accounts", data, { cashAccountId }),
+            ...state.auditLogs,
+          ],
+        })),
+      updateCustomer: (customerId, data) =>
+        set((state) => ({
+          customers: state.customers.map((c) =>
+            c.id === customerId ? { ...c, ...data } : c,
+          ),
+          auditLogs: [
+            audit("update", "customers", data, { customerId }),
+            ...state.auditLogs,
+          ],
+        })),
+      updateSupplier: (supplierId, data) =>
+        set((state) => ({
+          suppliers: state.suppliers.map((s) =>
+            s.id === supplierId ? { ...s, ...data } : s,
+          ),
+          auditLogs: [
+            audit("update", "suppliers", data, { supplierId }),
+            ...state.auditLogs,
+          ],
+        })),
+      updateAccount: (accountId, data) =>
+        set((state) => ({
+          accounts: state.accounts.map((a) =>
+            a.id === accountId ? { ...a, ...data } : a,
+          ),
+          auditLogs: [
+            audit("update", "accounts", data, { accountId }),
+            ...state.auditLogs,
+          ],
+        })),
+      updateAccountingPeriod: (periodId, data) =>
+        set((state) => ({
+          accountingPeriods: state.accountingPeriods.map((p) =>
+            p.id === periodId ? { ...p, ...data } : p,
+          ),
+          auditLogs: [
+            audit("update", "accounting_periods", data, { periodId }),
             ...state.auditLogs,
           ],
         })),
