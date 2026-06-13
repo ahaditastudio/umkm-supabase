@@ -30,7 +30,7 @@ export function Modal({ open, onClose, title, description, children }: ModalProp
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center max-lg:items-end justify-center p-4 max-lg:p-0">
       {/* Backdrop with frosted glass effect */}
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-xs transition-opacity duration-300 animate-in fade-in"
@@ -39,8 +39,19 @@ export function Modal({ open, onClose, title, description, children }: ModalProp
 
       {/* Modal Box */}
       <div
-        className="relative bg-card text-card-foreground border border-zinc-200/80 dark:border-zinc-800/60 rounded-2xl shadow-2xl w-full max-w-md p-6 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-200"
+        className={cn(
+          "relative bg-card text-card-foreground border border-zinc-200/80 dark:border-zinc-800/60 shadow-2xl w-full max-w-md overflow-hidden z-10",
+          "rounded-2xl p-6 animate-in fade-in zoom-in-95 duration-200",
+          "max-lg:rounded-b-none max-lg:rounded-t-3xl max-lg:max-w-none max-lg:w-full max-lg:p-6",
+          "max-lg:animate-in max-lg:slide-in-from-bottom max-lg:fade-in max-lg:duration-300"
+        )}
+        style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))" }}
       >
+        {/* Drag Handle - mobile only */}
+        <div className="lg:hidden flex justify-center mb-3 -mt-1">
+          <div className="w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+        </div>
+
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div>

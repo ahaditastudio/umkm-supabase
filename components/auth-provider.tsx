@@ -58,28 +58,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const firestore = db;
 
     return onAuthStateChanged(firebaseAuth, async (user) => {
-      setFirebaseUser(user);
+      try {
+        setFirebaseUser(user);
 
-      if (!user) {
-        setAppUser(null);
-        setLoading(false);
-        return;
-      }
+        if (!user) {
+          setAppUser(null);
+          return;
+        }
 
-      if (registeringRef.current) {
-        setLoading(false);
-        return;
-      }
+        if (registeringRef.current) {
+          return;
+        }
 
-      const userSnapshot = await getDoc(doc(firestore, "users", user.uid));
-      if (userSnapshot.exists()) {
-        const data = userSnapshot.data();
-        const companyId = String(data.companyId);
-        const profileSnapshot = await getDoc(
-          doc(firestore, "business_profiles", companyId),
-        );
+        const userSnapshot = await getDoc(doc(firestore, "users", user.uid));
+        if (userSnapshot.exists()) {
+          const data = userSnapshot.data();
+          const companyId = String(data.companyId);
+          const profileSnapshot = await getDoc(
+            doc(firestore, "business_profiles", companyId),
+          );
 
-        if (!profileSnapshot.exists()) {
+          if (!profileSnapshot.exists()) {
+            const result = await bootstrapCompanyForUser({
+              uid: user.uid,
+              email: user.email,
+              businessName: user.email?.split("@")[0] ?? "Bisnis Baru",
+            });
+            setAppUser({
+              uid: user.uid,
+              email: user.email,
+              companyId: result.companyId,
+              role: result.role,
+            });
+          } else {
+            setAppUser({
+              uid: user.uid,
+              email: user.email,
+              companyId,
+              role: (data.role ?? "owner") as UserRole,
+            });
+          }
+        } else {
           const result = await bootstrapCompanyForUser({
             uid: user.uid,
             email: user.email,
@@ -91,29 +110,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             companyId: result.companyId,
             role: result.role,
           });
-        } else {
-          setAppUser({
-            uid: user.uid,
-            email: user.email,
-            companyId,
-            role: (data.role ?? "owner") as UserRole,
-          });
         }
-      } else {
-        const result = await bootstrapCompanyForUser({
-          uid: user.uid,
-          email: user.email,
-          businessName: user.email?.split("@")[0] ?? "Bisnis Baru",
-        });
-        setAppUser({
-          uid: user.uid,
-          email: user.email,
-          companyId: result.companyId,
-          role: result.role,
-        });
+      } catch (error) {
+        console.error("[AuthProvider] Error resolving auth state:", error);
+        setAppUser(null);
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     });
   }, []);
 

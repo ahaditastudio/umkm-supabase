@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { RotateCcw, Trash2, PlusCircle, Search, Calendar, Filter, ArrowDownLeft, ArrowUpRight, ArrowLeftRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
@@ -200,13 +200,51 @@ export default function TransactionsPage() {
     return Object.keys(groupedTransactions).sort((a, b) => b.localeCompare(a));
   }, [groupedTransactions]);
 
+  // ── Infinite Scroll: load 5 days at a time ──
+  const DAYS_PER_PAGE = 5;
+  const [visibleDays, setVisibleDays] = useState(DAYS_PER_PAGE);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // Reset visible days when filter/search changes
+  useEffect(() => {
+    setVisibleDays(DAYS_PER_PAGE);
+  }, [searchTerm, filterType, filterAccount]);
+
+  const visibleDates = useMemo(
+    () => sortedDates.slice(0, visibleDays),
+    [sortedDates, visibleDays],
+  );
+
+  const hasMore = visibleDays < sortedDates.length;
+
+  const loadMore = useCallback(() => {
+    if (hasMore) {
+      setVisibleDays((prev) => Math.min(prev + DAYS_PER_PAGE, sortedDates.length));
+    }
+  }, [hasMore, sortedDates.length]);
+
+  // IntersectionObserver: auto-load when sentinel enters viewport
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) loadMore();
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loadMore]);
+
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header section with Action Button */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <Badge tone="blue">Ledger Entries</Badge>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
+          <h2 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl text-foreground">
             Riwayat Transaksi
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -239,7 +277,7 @@ export default function TransactionsPage() {
           </div>
 
           {/* Type and Account Filter */}
-          <div className="flex gap-2 min-w-[320px]">
+          <div className="flex flex-col sm:flex-row gap-2 sm:min-w-[320px]">
             <div className="flex-1 relative">
               <Filter className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
               <select
@@ -275,30 +313,32 @@ export default function TransactionsPage() {
 
       {/* Main Full-Width Timeline Feed */}
       {filteredTransactions.length ? (
-        <div className="space-y-6">
-          {sortedDates.map((date) => {
+        <div className="relative pl-8">
+          {/* Vertical timeline line */}
+          <div className="timeline-line" />
+
+          {visibleDates.map((date) => {
             const dateTransactions = groupedTransactions[date];
             return (
-              <div key={date} className="space-y-2.5">
-                {/* Date Group Header */}
-                <div className="sticky top-[57px] z-10 -mx-4 px-4 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-y border-zinc-200/50 dark:border-zinc-800/50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-700" />
-                    <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                      {formatDate(date)}
-                    </span>
+              <div key={date} className="relative mb-6">
+                {/* Date Pill — sits ON the timeline */}
+                <div className="relative z-10 flex items-center -ml-8 mb-3">
+                  <div className="w-[32px] flex justify-center">
+                    <div className="h-3 w-3 rounded-full bg-emerald-400 dark:bg-emerald-500 ring-4 ring-background" />
                   </div>
-                  <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500">
-                    {dateTransactions.length} Transaksi
+                  <span className="ml-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/50 dark:border-emerald-500/20 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                    {formatDate(date)}
+                    <span className="text-emerald-400 dark:text-emerald-500 font-semibold">
+                      ({dateTransactions.length})
+                    </span>
                   </span>
                 </div>
 
-                {/* Timeline Card Items List */}
-                <Card className="border-zinc-200/60 dark:border-zinc-800/50 overflow-hidden shadow-sm divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                {/* Transaction Cards */}
+                <div className="space-y-2.5">
                   {dateTransactions.map((tx) => {
                     const isDeleted = tx.deletedAt != null;
 
-                    // Details label for accounts
                     let accountName = "-";
                     if (tx.type === "transfer") {
                       const src = cashAccounts.find((a) => a.id === tx.sourceAccountId)?.name ?? "Kas";
@@ -308,10 +348,8 @@ export default function TransactionsPage() {
                       accountName = cashAccounts.find((a) => a.id === tx.cashAccountId)?.name ?? "Kas";
                     }
 
-                    // Category name if available
                     const categoryName = categories.find((c) => c.id === tx.categoryId)?.name;
 
-                    // Configure icon and colors based on transaction type
                     const typeConfig = {
                       income: {
                         icon: ArrowDownLeft,
@@ -339,70 +377,54 @@ export default function TransactionsPage() {
                     const TypeIcon = typeConfig.icon;
 
                     return (
-                      <div
-                        key={tx.id}
-                        className={cn(
-                          "group relative p-4 flex items-center justify-between gap-4 transition duration-200 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20",
-                          isDeleted && "opacity-45"
-                        )}
-                      >
-                        {/* Left: Icon & Description Info */}
-                        <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                          {/* Round Icon container */}
-                          <div className={cn("p-2.5 rounded-xl shrink-0 transition-transform duration-200 group-hover:scale-105", typeConfig.bg)}>
-                            <TypeIcon className={cn("h-4 w-4", typeConfig.iconColor)} />
-                          </div>
+                      <div key={tx.id} className="relative -ml-8 pl-8">
+                        {/* Connector dot on the timeline */}
+                        <div className="absolute left-[11px] top-4 h-2.5 w-2.5 rounded-full bg-white dark:bg-zinc-800 border-2 border-emerald-300 dark:border-emerald-600 z-10" />
 
-                          {/* Text details */}
-                          <div className="min-w-0 space-y-1">
-                            <p
-                              className={cn(
-                                "text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate leading-snug",
-                                isDeleted && "line-through text-muted-foreground"
-                              )}
-                            >
-                              {tx.description}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground font-medium">
-                              <span>{accountName}</span>
-                              {categoryName && (
-                                <>
-                                  <span className="text-zinc-300 dark:text-zinc-700">•</span>
-                                  <span className="px-1.5 py-0.2 bg-zinc-100 dark:bg-zinc-800/80 rounded-md text-zinc-650 dark:text-zinc-400">
-                                    {categoryName}
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Right: Amount, Badge, and Action buttons */}
-                        <div className="flex items-center gap-4 shrink-0 text-right">
-                          <div className="space-y-1">
-                            {/* Amount */}
-                            <p className={cn("text-xs font-bold leading-none tracking-tight", typeConfig.amountColor)}>
-                              {typeConfig.prefix}
-                              {formatCurrency(tx.amount)}
-                            </p>
-
-                            {/* Status Badge & Actions (Contextual on hover) */}
-                            <div className="h-5 flex items-center justify-end relative">
-                              {/* Standard Posted/Deleted Badge (Hidden on Hover if active/actions exist) */}
-                              <div className="transition-opacity duration-200 group-hover:opacity-0 flex items-center justify-end">
-                                {isDeleted ? (
-                                  <Badge tone="red">Deleted</Badge>
-                                ) : (
-                                  <Badge tone="green">Posted</Badge>
-                                )}
+                        {/* Transaction Card */}
+                        <Card className={cn(
+                          "border-zinc-200/60 dark:border-zinc-800/50 shadow-sm p-3.5",
+                          isDeleted && "opacity-50"
+                        )}>
+                          <div className="flex items-center justify-between gap-3">
+                            {/* Left: Icon + Info */}
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className={cn("p-2 rounded-xl shrink-0", typeConfig.bg)}>
+                                <TypeIcon className={cn("h-4 w-4", typeConfig.iconColor)} />
                               </div>
+                              <div className="min-w-0 space-y-0.5">
+                                <p className={cn(
+                                  "text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate leading-snug",
+                                  isDeleted && "line-through text-muted-foreground"
+                                )}>
+                                  {tx.description}
+                                </p>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground font-medium">
+                                  <span>{accountName}</span>
+                                  {categoryName && (
+                                    <>
+                                      <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                                      <span className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800/80 rounded-md">
+                                        {categoryName}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
 
-                              {/* Contextual Actions (Fade in on Hover) */}
-                              <div className="absolute right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-1 bg-gradient-to-l from-zinc-50/90 dark:from-zinc-900/95 via-background pl-4">
+                            {/* Right: Amount + Actions */}
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <p className={cn("text-xs font-bold leading-none tracking-tight", typeConfig.amountColor)}>
+                                {typeConfig.prefix}{formatCurrency(tx.amount)}
+                              </p>
+
+                              {/* Mobile: always-visible action button */}
+                              <div className="lg:hidden">
                                 {isDeleted ? (
                                   <button
                                     onClick={() => handleRestore(tx.id, tx.date)}
-                                    className="p-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-650 dark:text-emerald-400 rounded-md transition"
+                                    className="p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-600 rounded-md transition"
                                     title="Pulihkan Transaksi"
                                   >
                                     <RotateCcw className="h-3.5 w-3.5" />
@@ -410,23 +432,81 @@ export default function TransactionsPage() {
                                 ) : (
                                   <button
                                     onClick={() => openDeleteConfirmation(tx.id, tx.date)}
-                                    className="p-1 hover:bg-red-50 dark:hover:bg-red-950/30 text-rose-600 rounded-md transition"
+                                    className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/30 text-rose-600 rounded-md transition"
                                     title="Hapus Transaksi"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 )}
                               </div>
+
+                              {/* Desktop: hover-reveal badge + actions */}
+                              <div className="hidden lg:block h-5 relative">
+                                <div className="transition-opacity duration-200 group-hover:opacity-0 flex items-center justify-end">
+                                  {isDeleted ? (
+                                    <Badge tone="red">Deleted</Badge>
+                                  ) : (
+                                    <Badge tone="green">Posted</Badge>
+                                  )}
+                                </div>
+                                <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-1 bg-gradient-to-l from-card pl-4">
+                                  {isDeleted ? (
+                                    <button
+                                      onClick={() => handleRestore(tx.id, tx.date)}
+                                      className="p-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-600 rounded-md transition"
+                                      title="Pulihkan Transaksi"
+                                    >
+                                      <RotateCcw className="h-3.5 w-3.5" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => openDeleteConfirmation(tx.id, tx.date)}
+                                      className="p-1 hover:bg-red-50 dark:hover:bg-red-950/30 text-rose-600 rounded-md transition"
+                                      title="Hapus Transaksi"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        </Card>
                       </div>
                     );
                   })}
-                </Card>
+                </div>
               </div>
             );
           })}
+
+          {/* ── Infinite Scroll Sentinel & Load More ── */}
+          {hasMore && (
+            <div ref={loadMoreRef} className="flex flex-col items-center gap-3 py-6 -ml-8">
+              <div className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+                <div className="h-px w-8 bg-zinc-200 dark:bg-zinc-800" />
+                Menampilkan {visibleDates.length} dari {sortedDates.length} hari
+                <div className="h-px w-8 bg-zinc-200 dark:bg-zinc-800" />
+              </div>
+              <button
+                onClick={loadMore}
+                className="px-5 py-2 rounded-full bg-zinc-100 dark:bg-zinc-800/80 text-xs font-semibold text-foreground hover:bg-zinc-200 dark:hover:bg-zinc-700 transition duration-200 active:scale-95 border border-zinc-200/60 dark:border-zinc-700/50"
+              >
+                Muat lebih lama ↓
+              </button>
+            </div>
+          )}
+
+          {/* Show "all loaded" when everything is visible */}
+          {!hasMore && sortedDates.length > DAYS_PER_PAGE && (
+            <div className="flex items-center justify-center gap-2 py-5 -ml-8">
+              <div className="h-px w-10 bg-zinc-200 dark:bg-zinc-800" />
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Semua transaksi ditampilkan
+              </span>
+              <div className="h-px w-10 bg-zinc-200 dark:bg-zinc-800" />
+            </div>
+          )}
         </div>
       ) : (
         <EmptyState

@@ -39,7 +39,7 @@ import {
   calculateReportSummary,
   topAccountsByType,
 } from "@/lib/accounting";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatCurrencyCompact, formatCountCompact } from "@/lib/utils";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 
 // Custom Tooltip component for Recharts
@@ -101,10 +101,10 @@ export default function DashboardPage() {
   const maxExpense = useMemo(() => Math.max(...topExpenses.map(item => item.value), 1), [topExpenses]);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-5 sm:space-y-6 lg:space-y-8 animate-in fade-in duration-500">
       {/* Welcome Banner Row */}
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+        <div className="flex-1">
           <div className="flex items-center gap-2">
             <Badge tone="green">Double Entry Ledger</Badge>
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-500 bg-emerald-500/5 px-2 py-0.5 rounded-md border border-emerald-500/10">
@@ -112,7 +112,7 @@ export default function DashboardPage() {
               Live Sync
             </span>
           </div>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
+          <h2 className="mt-2 text-lg sm:text-2xl lg:text-3xl font-bold tracking-tight text-foreground">
             Selamat datang, {profile.ownerName || "Rekan"}
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -121,14 +121,14 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Statistics Badge */}
-        <div className="flex items-center gap-2 self-start md:self-auto">
-          <div className="rounded-lg border border-zinc-200/60 dark:border-zinc-800/40 bg-card px-4 py-2 text-xs font-medium text-muted-foreground flex gap-4">
+        <div className="flex items-center gap-2">
+          <div className="rounded-lg border border-zinc-200/60 dark:border-zinc-800/40 bg-card px-3 py-2 text-xs font-medium text-muted-foreground flex gap-3">
             <div>
-              <span className="text-foreground font-semibold">{transactions.filter((item) => !item.deletedAt).length}</span> Transaksi
+              <span className="text-foreground font-semibold">{formatCountCompact(transactions.filter((item) => !item.deletedAt).length)}</span> Transaksi
             </div>
             <div className="border-l border-zinc-200 dark:border-zinc-800" />
             <div>
-              <span className="text-foreground font-semibold">{journalEntries.filter((item) => !item.deletedAt).length}</span> Jurnal
+              <span className="text-foreground font-semibold">{formatCountCompact(journalEntries.filter((item) => !item.deletedAt).length)}</span> Jurnal
             </div>
           </div>
           <Link href="/transactions">
@@ -139,60 +139,66 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* KPI Cards - 2-col grid on mobile, 3-col on desktop */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:gap-4">
         <MetricCard
           title="Total Kas"
-          value={formatCurrency(summary.totalCash)}
+          value={formatCurrencyCompact(summary.totalCash)}
           icon={Wallet}
           helper="Akun kas tunai"
+          compact
         />
         <MetricCard
           title="Total Bank"
-          value={formatCurrency(summary.totalBank)}
+          value={formatCurrencyCompact(summary.totalBank)}
           icon={Landmark}
           tone="blue"
           helper="Saldo rekening bank"
+          compact
         />
         <MetricCard
           title="Pendapatan Bulan Ini"
-          value={formatCurrency(summary.monthlyRevenue)}
+          value={formatCurrencyCompact(summary.monthlyRevenue)}
           icon={ArrowUpCircle}
           tone="green"
+          compact
         />
         <MetricCard
           title="Pengeluaran Bulan Ini"
-          value={formatCurrency(summary.monthlyExpenses)}
+          value={formatCurrencyCompact(summary.monthlyExpenses)}
           icon={ArrowDownCircle}
           tone="red"
+          compact
         />
         <MetricCard
           title="Laba Bersih"
-          value={formatCurrency(summary.netProfit)}
+          value={formatCurrencyCompact(summary.netProfit)}
           icon={Banknote}
           tone={summary.netProfit >= 0 ? "green" : "red"}
           helper={summary.netProfit >= 0 ? "Profit positif" : "Defisit keuangan"}
+          compact
         />
         <MetricCard
           title="Estimasi Pajak"
-          value={formatCurrency(summary.estimatedTax)}
+          value={formatCurrencyCompact(summary.estimatedTax)}
           icon={Calculator}
           tone="yellow"
           helper={`${taxSettings.name} • ${(taxSettings.rate * 100).toFixed(1)}%`}
+          compact
         />
       </div>
 
       {/* Recharts Graphs Area */}
       <div className="grid gap-6 lg:grid-cols-12">
         <Card className="lg:col-span-7">
-          <CardHeader className="flex flex-row items-center justify-between border-b pb-4 mb-4">
+          <CardHeader className="flex flex-row items-center justify-between border-b pb-3 mb-3 lg:pb-4 lg:mb-4">
             <div>
-              <CardTitle>Pendapatan vs Pengeluaran</CardTitle>
+              <CardTitle className="text-sm sm:text-base">Pendapatan vs Pengeluaran</CardTitle>
               <CardDescription>Perbandingan arus kas bulanan berdasarkan nominal.</CardDescription>
             </div>
             <TrendingUp className="h-4 w-4 text-emerald-500 hidden sm:block" />
           </CardHeader>
-          <CardContent className="h-72 mt-2">
+          <CardContent className="h-48 sm:h-56 lg:h-72 mt-2">
             <ClientOnlyChart>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={cashFlow} margin={{ top: 10, right: 5, left: -20, bottom: 0 }}>
@@ -230,14 +236,14 @@ export default function DashboardPage() {
         </Card>
 
         <Card className="lg:col-span-5">
-          <CardHeader className="flex flex-row items-center justify-between border-b pb-4 mb-4">
+          <CardHeader className="flex flex-row items-center justify-between border-b pb-3 mb-3 lg:pb-4 lg:mb-4">
             <div>
-              <CardTitle>Aliran Kas Bersih</CardTitle>
+              <CardTitle className="text-sm sm:text-base">Aliran Kas Bersih</CardTitle>
               <CardDescription>Perkembangan profitabilitas (net income) bulanan.</CardDescription>
             </div>
             <Activity className="h-4 w-4 text-emerald-500 hidden sm:block" />
           </CardHeader>
-          <CardContent className="h-72 mt-2">
+          <CardContent className="h-48 sm:h-56 lg:h-72 mt-2">
             <ClientOnlyChart>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={cashFlow} margin={{ top: 10, right: 5, left: -20, bottom: 0 }}>
@@ -273,8 +279,8 @@ export default function DashboardPage() {
       {/* Top Ledger Performers (With progress bars) */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader className="border-b pb-4 mb-4">
-            <CardTitle>Sumber Pendapatan Utama</CardTitle>
+          <CardHeader className="border-b pb-3 mb-3 lg:pb-4 lg:mb-4">
+            <CardTitle className="text-sm sm:text-base">Sumber Pendapatan Utama</CardTitle>
             <CardDescription>Akun pendapatan paling produktif di buku besar.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -309,8 +315,8 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader className="border-b pb-4 mb-4">
-            <CardTitle>Pos Pengeluaran Terbesar</CardTitle>
+          <CardHeader className="border-b pb-3 mb-3 lg:pb-4 lg:mb-4">
+            <CardTitle className="text-sm sm:text-base">Pos Pengeluaran Terbesar</CardTitle>
             <CardDescription>Akun alokasi pengeluaran dana terbesar.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

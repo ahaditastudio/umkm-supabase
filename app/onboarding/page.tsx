@@ -79,7 +79,7 @@ export default function OnboardingPage() {
       {/* Header Info */}
       <div className="text-center space-y-2">
         <Badge tone="blue">Setup Wizard</Badge>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+        <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl lg:text-3xl">
           Konfigurasi Awal KasFlow
         </h2>
         <p className="text-xs text-muted-foreground/95 max-w-md mx-auto leading-relaxed">

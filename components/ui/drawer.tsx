@@ -31,7 +31,9 @@ export function Drawer({ open, onClose, title, description, children }: DrawerPr
   return createPortal(
     <div
       className={cn(
-        "fixed inset-0 z-50 flex justify-end transition-opacity duration-300",
+        "fixed inset-0 z-50 flex transition-opacity duration-300",
+        "max-lg:items-end max-lg:justify-center",
+        "lg:justify-end",
         open ? "pointer-events-auto" : "pointer-events-none"
       )}
     >
@@ -47,12 +49,23 @@ export function Drawer({ open, onClose, title, description, children }: DrawerPr
       {/* Content */}
       <div
         className={cn(
-          "relative flex h-full w-full max-w-md flex-col border-l border-zinc-200 dark:border-zinc-800 bg-background p-6 shadow-2xl transition-transform duration-300 ease-in-out sm:max-w-lg",
-          open ? "translate-x-0" : "translate-x-full"
+          "relative flex flex-col bg-background shadow-2xl transition-transform duration-300 ease-in-out drawer-sheet",
+          /* Desktop: right side panel */
+          "h-full w-full max-w-md border-l border-zinc-200 dark:border-zinc-800",
+          open ? "lg:translate-x-0" : "lg:translate-x-full",
+          /* Mobile: bottom sheet */
+          "max-lg:h-auto max-lg:max-h-[92vh] max-lg:rounded-t-3xl max-lg:border-l-0 max-lg:border-t max-lg:border-zinc-200 dark:max-lg:border-zinc-800",
+          "max-lg:w-full max-lg:max-w-lg",
+          open ? "max-lg:translate-y-0" : "max-lg:translate-y-full"
         )}
       >
+        {/* Drag Handle - mobile only */}
+        <div className="lg:hidden flex justify-center pt-2 pb-1">
+          <div className="w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+        </div>
+
         {/* Header */}
-        <div className="flex items-start justify-between border-b pb-4 mb-5">
+        <div className="flex items-start justify-between border-b pb-4 mb-5 px-6 pt-2">
           <div className="space-y-1">
             <h2 className="text-base font-semibold text-foreground tracking-tight">{title}</h2>
             {description ? (
@@ -68,7 +81,8 @@ export function Drawer({ open, onClose, title, description, children }: DrawerPr
         </div>
 
         {/* Scrollable Form Body */}
-        <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin px-6"
+             style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom, 0px))" }}>
           <div className="pb-8">{children}</div>
         </div>
       </div>

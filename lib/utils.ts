@@ -13,6 +13,24 @@ export function formatCurrency(value: number) {
   }).format(value || 0);
 }
 
+export function formatCurrencyCompact(value: number): string {
+  const abs = Math.abs(value || 0);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1_000_000_000_000) return `${sign}Rp${(abs / 1_000_000_000_000).toFixed(1).replace(/\.0$/, "")}T`;
+  if (abs >= 1_000_000_000) return `${sign}Rp${(abs / 1_000_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000_000) return `${sign}Rp${(abs / 1_000_000).toFixed(1).replace(/\.0$/, "")}Jt`;
+  if (abs >= 1_000) return `${sign}Rp${(abs / 1_000).toFixed(1).replace(/\.0$/, "")}rb`;
+  return `${sign}Rp${abs}`;
+}
+
+export function formatCountCompact(value: number): string {
+  const abs = Math.abs(value || 0);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return `${abs}`;
+}
+
 export function formatDate(value: string | Date) {
   const date = typeof value === "string" ? new Date(value) : value;
   return new Intl.DateTimeFormat("id-ID", {

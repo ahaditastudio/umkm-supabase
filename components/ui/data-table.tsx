@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 export function Table({ className, ...props }: React.HTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="w-full overflow-x-auto scrollbar-thin">
+    <div className="w-full overflow-x-auto scrollbar-thin rounded-2xl">
       <table className={cn("w-full caption-bottom text-sm border-collapse", className)} {...props} />
     </div>
   );
@@ -33,7 +33,7 @@ export function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTa
   return (
     <th
       className={cn(
-        "h-10 px-4 text-left align-middle text-xs font-semibold text-muted-foreground uppercase tracking-wider",
+        "h-10 px-3 lg:px-4 text-left align-middle text-xs font-semibold text-muted-foreground uppercase tracking-wider",
         className
       )}
       {...props}
@@ -42,5 +42,5 @@ export function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTa
 }
 
 export function TableCell({ className, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cn("p-4 align-middle text-zinc-700 dark:text-zinc-300 text-xs font-medium", className)} {...props} />;
+  return <td className={cn("p-3 lg:p-4 align-middle text-zinc-700 dark:text-zinc-300 text-xs font-medium", className)} {...props} />;
 }

@@ -184,7 +184,7 @@ export default function UtilitiesPage() {
     <div className="space-y-6">
       <div>
         <Badge tone="blue">Utilities</Badge>
-        <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
+        <h2 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl">
           Utilitas
         </h2>
         <p className="mt-1 text-muted-foreground">

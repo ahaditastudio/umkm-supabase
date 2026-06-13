@@ -57,7 +57,7 @@ export default function TaxPage() {
     <div className="space-y-6">
       <div>
         <Badge tone="yellow">Tax Module</Badge>
-        <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
+        <h2 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl">
           Pajak
         </h2>
         <p className="mt-1 text-muted-foreground">

@@ -35,7 +35,7 @@ import {
   calculateTaxReport,
   getAccount,
 } from "@/lib/accounting";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatCurrencyCompact } from "@/lib/utils";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 import {
   Banknote,
@@ -174,7 +174,7 @@ export default function ReportsPage() {
   // Signature Block JSX for on-screen document look
   const renderedSignatureBlock = (
     <div className="flex justify-end pt-10 text-xs">
-      <div className="w-64 space-y-16 text-right pr-6 select-none">
+      <div className="w-full sm:w-64 space-y-12 sm:space-y-16 text-right pr-2 sm:pr-6 select-none">
         <div className="space-y-1">
           <p className="text-muted-foreground font-medium">Pekanbaru, {new Date().getDate()} April {selectedYear + 1}</p>
           <p className="font-semibold text-foreground">Penanggung Jawab,</p>
@@ -195,7 +195,7 @@ export default function ReportsPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b pb-5 border-zinc-200/50 dark:border-zinc-800/40">
         <div>
           <Badge tone="green">Laporan Keuangan</Badge>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
+          <h2 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl text-foreground">
             Laporan & Finansial
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -204,14 +204,14 @@ export default function ReportsPage() {
         </div>
 
         {/* Action Header controls */}
-        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
-          {/* Year selector */}
-          <div className="relative">
+        <div className="space-y-2.5 self-start lg:self-auto lg:space-y-0 lg:flex lg:items-center lg:gap-2">
+          {/* Year selector - full width on mobile, auto on desktop */}
+          <div className="relative w-full lg:w-auto">
             <Calendar className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="h-9.5 w-32 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card pl-8 pr-2 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
+              className="h-9.5 w-full lg:w-40 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card pl-8 pr-2 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
             >
               {yearsList.map((y) => (
                 <option key={y} value={y}>
@@ -221,107 +221,116 @@ export default function ReportsPage() {
             </select>
           </div>
 
-          {/* Excel Export Button */}
-          <Button
-            onClick={handleExcelExport}
-            variant="outline"
-            className="text-xs font-semibold h-9.5 gap-1.5"
-          >
-            <FileDown className="h-4 w-4" /> Export Excel
-          </Button>
-
-          {/* PDF Export Button */}
-          {activeTab !== "cash_flow" && (
+          {/* Export buttons - row below on mobile, inline on desktop */}
+          <div className="flex items-center gap-2">
+            {/* Excel Export Button */}
             <Button
-              onClick={handlePdfExport}
-              className="bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white text-xs font-semibold h-9.5 gap-1.5"
+              onClick={handleExcelExport}
+              variant="outline"
+              className="flex-1 lg:flex-none text-xs font-semibold h-9.5 gap-1.5"
             >
-              <FileDown className="h-4 w-4" /> Export PDF
+              <FileDown className="h-4 w-4" />
+              <span className="hidden sm:inline">Export </span>Excel
             </Button>
-          )}
+
+            {/* PDF Export Button */}
+            {activeTab !== "cash_flow" && (
+              <Button
+                onClick={handlePdfExport}
+                className="flex-1 lg:flex-none bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white text-xs font-semibold h-9.5 gap-1.5"
+              >
+                <FileDown className="h-4 w-4" />
+                <span className="hidden sm:inline">Export </span>PDF
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* KPI Cards - 2-col grid on mobile, 4-col on desktop */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:gap-4">
         <MetricCard
           title="Gross Revenue"
-          value={formatCurrency(profitLoss.revenue)}
+          value={formatCurrencyCompact(profitLoss.revenue)}
           icon={TrendingUp}
           tone="green"
+          compact
         />
         <MetricCard
           title="Total Expenses"
-          value={formatCurrency(profitLoss.expenses)}
+          value={formatCurrencyCompact(profitLoss.expenses)}
           icon={Banknote}
           tone="red"
+          compact
         />
         <MetricCard
           title="Net Profit"
-          value={formatCurrency(profitLoss.netProfit)}
+          value={formatCurrencyCompact(profitLoss.netProfit)}
           icon={Scale}
           tone={profitLoss.netProfit >= 0 ? "green" : "red"}
+          compact
         />
         <MetricCard
           title="Total Assets"
-          value={formatCurrency(balanceSheet.assets)}
+          value={formatCurrencyCompact(balanceSheet.assets)}
           icon={Landmark}
           tone="blue"
+          compact
         />
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex border-b border-zinc-200 dark:border-zinc-800 gap-6">
+      {/* Navigation Tabs - scrollable pills on mobile */}
+      <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-4 px-4 pb-1 lg:mx-0 lg:px-0 lg:border-b lg:border-zinc-200 lg:dark:border-zinc-800 lg:gap-6">
         <button
           onClick={() => setActiveTab("profit_loss")}
           className={cn(
-            "pb-3.5 text-xs font-semibold uppercase tracking-wider transition relative",
+            "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "profit_loss"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
           )}
         >
           <span className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4" /> Laba Rugi
+            <BookOpen className="h-4 w-4" /> <span className="lg:hidden">Laba Rugi</span><span className="hidden lg:inline">Laba Rugi</span>
           </span>
         </button>
         <button
           onClick={() => setActiveTab("balance_sheet")}
           className={cn(
-            "pb-3.5 text-xs font-semibold uppercase tracking-wider transition relative",
+            "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "balance_sheet"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
           )}
         >
           <span className="flex items-center gap-2">
-            <Layers className="h-4 w-4" /> Neraca Keuangan
+            <Layers className="h-4 w-4" /> <span className="lg:hidden">Neraca</span><span className="hidden lg:inline">Neraca Keuangan</span>
           </span>
         </button>
         <button
           onClick={() => setActiveTab("bruto_tax")}
           className={cn(
-            "pb-3.5 text-xs font-semibold uppercase tracking-wider transition relative",
+            "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "bruto_tax"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
           )}
         >
           <span className="flex items-center gap-2">
-            <Users2 className="h-4 w-4" /> Peredaran Bruto (0,5%)
+            <Users2 className="h-4 w-4" /> <span className="lg:hidden">Peredaran Bruto</span><span className="hidden lg:inline">Peredaran Bruto (0,5%)</span>
           </span>
         </button>
         <button
           onClick={() => setActiveTab("cash_flow")}
           className={cn(
-            "pb-3.5 text-xs font-semibold uppercase tracking-wider transition relative",
+            "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "cash_flow"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
           )}
         >
           <span className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4" /> Arus Kas
+            <CalendarDays className="h-4 w-4" /> <span className="lg:hidden">Arus Kas</span><span className="hidden lg:inline">Arus Kas</span>
           </span>
         </button>
       </div>
@@ -329,13 +338,13 @@ export default function ReportsPage() {
       {/* Tab Render Body */}
       <div className="space-y-6">
         {activeTab === "profit_loss" && (
-          <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm p-6 space-y-8 bg-card">
+          <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm p-4 sm:p-6 space-y-6 sm:space-y-8 bg-card">
             {/* Styled Sheet-like Document Header */}
             <div className="text-center space-y-1.5 border-b pb-6 select-none">
-              <h3 className="text-sm font-extrabold uppercase tracking-widest text-zinc-400">Laporan Laba Rugi</h3>
-              <h2 className="text-lg font-black uppercase text-foreground tracking-tight">{profile.businessName}</h2>
+              <h3 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-zinc-400">Laporan Laba Rugi</h3>
+              <h2 className="text-base sm:text-lg font-black uppercase text-foreground tracking-tight">{profile.businessName}</h2>
               <p className="text-xs text-muted-foreground">Tahun Pajak {selectedYear} | Periode: 1 Januari - 31 Desember {selectedYear}</p>
-              <div className="text-[10px] text-muted-foreground font-semibold flex justify-center gap-6 pt-2">
+              <div className="text-[10px] text-muted-foreground font-semibold flex flex-col sm:flex-row justify-center gap-1 sm:gap-6 pt-2">
                 <span>NPWP: {profile.taxNumber || "-"}</span>
                 <span>Mata Uang: IDR (Rupiah)</span>
               </div>
@@ -378,7 +387,7 @@ export default function ReportsPage() {
               </div>
 
               {/* Laba Bersih */}
-              <div className="flex justify-between items-center rounded-xl border border-zinc-300 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-900/30 px-4 py-3 text-xs font-black text-foreground uppercase tracking-wider">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-900/30 px-3 sm:px-4 py-3 text-[10px] sm:text-xs font-black text-foreground uppercase tracking-wider">
                 <span>Laba / (Rugi) Bersih (Net Profit)</span>
                 <span className={profitLoss.netProfit >= 0 ? "text-emerald-500 text-sm" : "text-rose-500 text-sm"}>
                   {formatCurrency(profitLoss.netProfit)}
@@ -392,13 +401,13 @@ export default function ReportsPage() {
         )}
 
         {activeTab === "balance_sheet" && (
-          <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm p-6 space-y-8 bg-card">
+          <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm p-4 sm:p-6 space-y-6 sm:space-y-8 bg-card">
             {/* Styled Sheet-like Document Header */}
             <div className="text-center space-y-1.5 border-b pb-6 select-none">
               <h3 className="text-sm font-extrabold uppercase tracking-widest text-zinc-400">Neraca Keuangan</h3>
-              <h2 className="text-lg font-black uppercase text-foreground tracking-tight">{profile.businessName}</h2>
+              <h2 className="text-base sm:text-lg font-black uppercase text-foreground tracking-tight">{profile.businessName}</h2>
               <p className="text-xs text-muted-foreground">Per tanggal 31 Desember {selectedYear}</p>
-              <div className="text-[10px] text-muted-foreground font-semibold flex justify-center gap-6 pt-2">
+              <div className="text-[10px] text-muted-foreground font-semibold flex flex-col sm:flex-row justify-center gap-1 sm:gap-6 pt-2">
                 <span>NPWP: {profile.taxNumber || "-"}</span>
                 <span>Mata Uang: IDR (Rupiah)</span>
               </div>
@@ -462,7 +471,7 @@ export default function ReportsPage() {
             </div>
 
             {/* Balance check */}
-            <div className="max-w-4xl mx-auto rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 bg-zinc-50/20 flex items-center justify-between">
+            <div className="max-w-4xl mx-auto rounded-xl border border-zinc-200 dark:border-zinc-800 p-3 sm:p-4 bg-zinc-50/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 {balanceSheet.isBalanced ? (
                   <>
@@ -485,72 +494,122 @@ export default function ReportsPage() {
         )}
 
         {activeTab === "bruto_tax" && (
-          <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm p-6 space-y-8 bg-card overflow-x-auto">
+          <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm p-4 sm:p-6 space-y-8 bg-card">
             {/* Styled Sheet-like Document Header */}
-            <div className="text-center space-y-1.5 border-b pb-6 select-none min-w-[700px]">
+            <div className="text-center space-y-1.5 border-b pb-6 select-none">
               <h3 className="text-sm font-extrabold uppercase tracking-widest text-zinc-400">Laporan Peredaran Bruto (Omset) UMKM</h3>
-              <h2 className="text-lg font-black uppercase text-foreground tracking-tight">{profile.businessName}</h2>
+              <h2 className="text-base sm:text-lg font-black uppercase text-foreground tracking-tight">{profile.businessName}</h2>
               <p className="text-xs text-muted-foreground">Tahun Pajak {selectedYear} | Periode: 1 Januari - 31 Desember {selectedYear}</p>
-              <div className="text-[10px] text-muted-foreground font-semibold flex justify-center gap-6 pt-2">
+              <div className="text-[10px] text-muted-foreground font-semibold flex flex-col sm:flex-row justify-center gap-1 sm:gap-6 pt-2">
                 <span>NPWP: {profile.taxNumber || "-"}</span>
                 <span>Skema Perpajakan: PPh Final 0,5% (PP No. 55 Tahun 2022)</span>
               </div>
             </div>
 
-            {/* Monthly grid */}
-            <div className="min-w-[700px] overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10">No</TableHead>
-                    <TableHead>Bulan</TableHead>
-                    <TableHead className="text-right">Peredaran Bruto (Rp)</TableHead>
-                    <TableHead className="text-right">PPh Final 0,5% (Rp)</TableHead>
-                    <TableHead className="text-right">Kumulatif Omset (Rp)</TableHead>
-                    <TableHead className="text-right">Kumulatif PPh (Rp)</TableHead>
-                    <TableHead className="text-center">Keterangan</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {monthlyTaxReports.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="text-muted-foreground">{index + 1}</TableCell>
-                      <TableCell className="font-bold">{item.monthName}</TableCell>
-                      <TableCell className="text-right font-semibold text-zinc-950 dark:text-white">
-                        {formatCurrency(item.grossRevenue)}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(item.tax)}
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        {formatCurrency(item.cumOmset)}
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        {formatCurrency(item.cumTax)}
-                      </TableCell>
-                      <TableCell className="text-center text-muted-foreground">-</TableCell>
-                    </TableRow>
-                  ))}
-                  {/* Total Row */}
-                  <TableRow className="bg-zinc-50/70 dark:bg-zinc-900/40 font-black border-t border-zinc-900">
-                    <TableCell></TableCell>
-                    <TableCell className="uppercase tracking-wider">Total Tahun {selectedYear}</TableCell>
-                    <TableCell className="text-right text-zinc-950 dark:text-white font-extrabold">
-                      {formatCurrency(totalGrossRevenue)}
-                    </TableCell>
-                    <TableCell className="text-right text-emerald-600 dark:text-emerald-400 font-extrabold">
-                      {formatCurrency(totalTaxDue)}
-                    </TableCell>
-                    <TableCell className="text-right">-</TableCell>
-                    <TableCell className="text-right">-</TableCell>
-                    <TableCell className="text-center text-muted-foreground font-semibold">Total Setahun</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
+            {/* Monthly data */}
+            <>
+              {/* Mobile: month cards */}
+              <div className="lg:hidden space-y-3">
+                {monthlyTaxReports.map((item, index) => (
+                  <div key={index} className="rounded-xl border border-zinc-200/60 dark:border-zinc-800/50 p-4 bg-zinc-50/25 dark:bg-zinc-900/10">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-bold text-sm text-foreground">{item.monthName}</span>
+                      <Badge tone="muted" className="text-[10px]">#{index + 1}</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Peredaran Bruto</span>
+                        <p className="font-bold text-zinc-950 dark:text-white mt-0.5">{formatCurrency(item.grossRevenue)}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">PPh Final 0,5%</span>
+                        <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{formatCurrency(item.tax)}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-2.5 border-t border-zinc-100 dark:border-zinc-800/50 grid grid-cols-2 gap-3 text-[11px]">
+                      <div>
+                        <span className="text-muted-foreground">Kum. Omset</span>
+                        <p className="font-semibold text-foreground">{formatCurrency(item.cumOmset)}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Kum. PPh</span>
+                        <p className="font-semibold text-foreground">{formatCurrency(item.cumTax)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {/* Total summary */}
+                <div className="rounded-xl border-2 border-zinc-300 dark:border-zinc-700 p-4 bg-zinc-50 dark:bg-zinc-900/30">
+                  <p className="font-bold text-xs uppercase tracking-wider text-foreground mb-3">Total Tahun {selectedYear}</p>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Total Bruto</span>
+                      <p className="font-extrabold text-zinc-950 dark:text-white mt-0.5">{formatCurrency(totalGrossRevenue)}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Total PPh</span>
+                      <p className="font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">{formatCurrency(totalTaxDue)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* Desktop: table */}
+              <div className="hidden lg:block overflow-x-auto">
+                <div className="min-w-[700px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-10">No</TableHead>
+                        <TableHead>Bulan</TableHead>
+                        <TableHead className="text-right">Peredaran Bruto (Rp)</TableHead>
+                        <TableHead className="text-right">PPh Final 0,5% (Rp)</TableHead>
+                        <TableHead className="text-right">Kumulatif Omset (Rp)</TableHead>
+                        <TableHead className="text-right">Kumulatif PPh (Rp)</TableHead>
+                        <TableHead className="text-center">Keterangan</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {monthlyTaxReports.map((item, index) => (
+                        <TableRow key={index}>
+                          <TableCell className="text-muted-foreground">{index + 1}</TableCell>
+                          <TableCell className="font-bold">{item.monthName}</TableCell>
+                          <TableCell className="text-right font-semibold text-zinc-950 dark:text-white">
+                            {formatCurrency(item.grossRevenue)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                            {formatCurrency(item.tax)}
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {formatCurrency(item.cumOmset)}
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {formatCurrency(item.cumTax)}
+                          </TableCell>
+                          <TableCell className="text-center text-muted-foreground">-</TableCell>
+                        </TableRow>
+                      ))}
+                      {/* Total Row */}
+                      <TableRow className="bg-zinc-50/70 dark:bg-zinc-900/40 font-black border-t border-zinc-900">
+                        <TableCell></TableCell>
+                        <TableCell className="uppercase tracking-wider">Total Tahun {selectedYear}</TableCell>
+                        <TableCell className="text-right text-zinc-950 dark:text-white font-extrabold">
+                          {formatCurrency(totalGrossRevenue)}
+                        </TableCell>
+                        <TableCell className="text-right text-emerald-600 dark:text-emerald-400 font-extrabold">
+                          {formatCurrency(totalTaxDue)}
+                        </TableCell>
+                        <TableCell className="text-right">-</TableCell>
+                        <TableCell className="text-right">-</TableCell>
+                        <TableCell className="text-center text-muted-foreground font-semibold">Total Setahun</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </>
 
             {/* Legal Footnote disclaimer */}
-            <div className="text-[10px] text-muted-foreground/80 leading-normal border-t pt-4 min-w-[700px]">
+            <div className="text-[10px] text-muted-foreground/80 leading-normal border-t pt-4">
               <span className="font-bold text-foreground">Catatan Perpajakan:</span>
               <p className="mt-1">1. Sesuai PP No. 55 Tahun 2022, PPh Final 0,5% dihitung dari peredaran bruto/omset bulanan.</p>
               <p>2. Khusus Wajib Pajak Orang Pribadi (OP), dikenakan pajak apabila akumulasi omset kumulatif setahun telah melewati batas ambang tidak kena pajak Rp 500.000.000 (Lima Ratus Juta Rupiah).</p>
@@ -568,7 +627,7 @@ export default function ReportsPage() {
                 <CardTitle>Arus Kas Bersih (Net Cash Flow)</CardTitle>
                 <CardDescription>Grafik aliran dana masuk & keluar riil dari aktivitas operasional.</CardDescription>
               </CardHeader>
-              <CardContent className="h-80 mt-2">
+              <CardContent className="h-56 lg:h-80 mt-2">
                 <ClientOnlyChart>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={cashFlow} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>

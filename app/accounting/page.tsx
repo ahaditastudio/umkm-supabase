@@ -290,7 +290,7 @@ export default function AccountingPage() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <Badge tone="blue">Accounting Core</Badge>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
+          <h2 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl text-foreground">
             Sistem Akuntansi & Ledger
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -300,44 +300,44 @@ export default function AccountingPage() {
       </div>
 
       {/* Tabs Navigation */}
-      <div className="flex border-b border-zinc-200 dark:border-zinc-800 gap-6">
+      <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-4 px-4 pb-1 lg:mx-0 lg:px-0 lg:border-b lg:border-zinc-200 lg:dark:border-zinc-800 lg:gap-6">
         <button
           onClick={() => setActiveTab("journal_ledger")}
           className={cn(
-            "pb-3.5 text-xs font-semibold uppercase tracking-wider transition relative",
+            "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "journal_ledger"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
           )}
         >
           <span className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4" /> Jurnal & Buku Besar
+            <BookOpen className="h-4 w-4" /> <span className="lg:hidden">Jurnal & Ledger</span><span className="hidden lg:inline">Jurnal & Buku Besar</span>
           </span>
         </button>
         <button
           onClick={() => setActiveTab("period_setup")}
           className={cn(
-            "pb-3.5 text-xs font-semibold uppercase tracking-wider transition relative",
+            "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "period_setup"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
           )}
         >
           <span className="flex items-center gap-2">
-            <Layers className="h-4 w-4" /> Tutup Buku & Saldo Awal
+            <Layers className="h-4 w-4" /> <span className="lg:hidden">Tutup Buku</span><span className="hidden lg:inline">Tutup Buku & Saldo Awal</span>
           </span>
         </button>
         <button
           onClick={() => setActiveTab("coa")}
           className={cn(
-            "pb-3.5 text-xs font-semibold uppercase tracking-wider transition relative",
+            "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "coa"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
           )}
         >
           <span className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4" /> Chart of Accounts (COA)
+            <ShieldCheck className="h-4 w-4" /> <span className="lg:hidden">COA</span><span className="hidden lg:inline">Chart of Accounts (COA)</span>
           </span>
         </button>
       </div>
@@ -432,37 +432,63 @@ export default function AccountingPage() {
               <CardContent className="px-0 py-0">
                 <div className="max-h-[440px] overflow-y-auto scrollbar-thin">
                   {selectedLedger.length ? (
-                    <Table>
-                      <TableHeader className="bg-transparent">
-                        <TableRow>
-                          <TableHead>Tanggal</TableHead>
-                          <TableHead>Keterangan</TableHead>
-                          <TableHead className="text-right">Debit</TableHead>
-                          <TableHead className="text-right">Kredit</TableHead>
-                          <TableHead className="text-right">Saldo</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+                    <>
+                      {/* Mobile: stacked cards */}
+                      <div className="lg:hidden divide-y divide-zinc-100 dark:divide-zinc-800/50">
                         {selectedLedger.map((entry) => (
-                          <TableRow key={entry.id}>
-                            <TableCell className="font-semibold text-zinc-950 dark:text-white">{formatDate(entry.date)}</TableCell>
-                            <TableCell className="max-w-[120px] truncate">{entry.description}</TableCell>
-                            <TableCell className="text-right text-xs font-bold text-zinc-900 dark:text-white">
-                              {entry.debit ? formatCurrency(entry.debit) : "-"}
-                            </TableCell>
-                            <TableCell className="text-right text-xs font-bold text-zinc-900 dark:text-white">
-                              {entry.credit ? formatCurrency(entry.credit) : "-"}
-                            </TableCell>
-                            <TableCell className={cn(
-                              "text-right text-xs font-extrabold",
-                              entry.balance > 0 ? "text-emerald-600 dark:text-emerald-400" : entry.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
-                            )}>
-                              {formatCurrency(entry.balance)}
-                            </TableCell>
-                          </TableRow>
+                          <div key={entry.id} className="px-4 py-3">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-semibold text-zinc-950 dark:text-white">{formatDate(entry.date)}</span>
+                              <span className={cn(
+                                "text-xs font-extrabold tabular-nums",
+                                entry.balance > 0 ? "text-emerald-600 dark:text-emerald-400" : entry.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
+                              )}>
+                                {formatCurrency(entry.balance)}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate mb-1">{entry.description}</p>
+                            <div className="flex gap-4 text-[11px]">
+                              <span className="text-muted-foreground">D: <span className="font-bold text-zinc-900 dark:text-white">{entry.debit ? formatCurrency(entry.debit) : "-"}</span></span>
+                              <span className="text-muted-foreground">K: <span className="font-bold text-zinc-900 dark:text-white">{entry.credit ? formatCurrency(entry.credit) : "-"}</span></span>
+                            </div>
+                          </div>
                         ))}
-                      </TableBody>
-                    </Table>
+                      </div>
+                      {/* Desktop: table */}
+                      <div className="hidden lg:block">
+                        <Table>
+                          <TableHeader className="bg-transparent">
+                            <TableRow>
+                              <TableHead>Tanggal</TableHead>
+                              <TableHead>Keterangan</TableHead>
+                              <TableHead className="text-right">Debit</TableHead>
+                              <TableHead className="text-right">Kredit</TableHead>
+                              <TableHead className="text-right">Saldo</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {selectedLedger.map((entry) => (
+                              <TableRow key={entry.id}>
+                                <TableCell className="font-semibold text-zinc-950 dark:text-white">{formatDate(entry.date)}</TableCell>
+                                <TableCell className="max-w-[120px] truncate">{entry.description}</TableCell>
+                                <TableCell className="text-right text-xs font-bold text-zinc-900 dark:text-white">
+                                  {entry.debit ? formatCurrency(entry.debit) : "-"}
+                                </TableCell>
+                                <TableCell className="text-right text-xs font-bold text-zinc-900 dark:text-white">
+                                  {entry.credit ? formatCurrency(entry.credit) : "-"}
+                                </TableCell>
+                                <TableCell className={cn(
+                                  "text-right text-xs font-extrabold",
+                                  entry.balance > 0 ? "text-emerald-600 dark:text-emerald-400" : entry.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
+                                )}>
+                                  {formatCurrency(entry.balance)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </>
                   ) : (
                     <div className="p-6">
                       <EmptyState
@@ -815,7 +841,7 @@ export default function AccountingPage() {
                         <Badge tone="muted" className="text-[9px]">{account.type}</Badge>
                         <button
                           onClick={() => openEditAccount(account.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
+                          className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
                           title="Edit Akun"
                         >
                           <Pencil className="h-3 w-3" />

@@ -40,7 +40,7 @@ export default function SettingsPage() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <Badge tone="muted">Settings & Management</Badge>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
+          <h2 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl text-foreground">
             Pengaturan Sistem
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">

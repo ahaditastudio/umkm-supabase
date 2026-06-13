@@ -352,7 +352,7 @@ export default function MasterDataPage() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <Badge tone="yellow">Config & Entities</Badge>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
+          <h2 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl text-foreground">
             Master Data & Pengaturan
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -407,44 +407,44 @@ export default function MasterDataPage() {
       </div>
 
       {/* Tabs Navigation (Pills format) */}
-      <div className="flex border-b border-zinc-200 dark:border-zinc-800 gap-6">
+      <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-4 px-4 pb-1 lg:mx-0 lg:px-0 lg:border-b lg:border-zinc-200 lg:dark:border-zinc-800 lg:gap-6">
         <button
           onClick={() => setActiveTab("categories")}
           className={cn(
-            "pb-3.5 text-xs font-semibold uppercase tracking-wider transition relative",
+            "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "categories"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
           )}
         >
           <span className="flex items-center gap-2">
-            <FolderTree className="h-4 w-4" /> Kategori Transaksi
+            <FolderTree className="h-4 w-4" /> <span className="lg:hidden">Kategori</span><span className="hidden lg:inline">Kategori Transaksi</span>
           </span>
         </button>
         <button
           onClick={() => setActiveTab("cash_accounts")}
           className={cn(
-            "pb-3.5 text-xs font-semibold uppercase tracking-wider transition relative",
+            "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "cash_accounts"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
           )}
         >
           <span className="flex items-center gap-2">
-            <Landmark className="h-4 w-4" /> Rekening Kas / Bank
+            <Landmark className="h-4 w-4" /> <span className="lg:hidden">Kas / Bank</span><span className="hidden lg:inline">Rekening Kas / Bank</span>
           </span>
         </button>
         <button
           onClick={() => setActiveTab("contacts")}
           className={cn(
-            "pb-3.5 text-xs font-semibold uppercase tracking-wider transition relative",
+            "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "contacts"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
           )}
         >
           <span className="flex items-center gap-2">
-            <Users className="h-4 w-4" /> Database Kontak
+            <Users className="h-4 w-4" /> <span className="lg:hidden">Kontak</span><span className="hidden lg:inline">Database Kontak</span>
           </span>
         </button>
       </div>
@@ -452,48 +452,23 @@ export default function MasterDataPage() {
       {/* Tab Contents */}
       <div className="space-y-6">
         {activeTab === "categories" && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {categories.length ? (
-              categories.map((category) => {
-                const mappedAccount = getAccount(accounts, category.accountId);
-                return (
-                  <Card key={category.id} className="group relative border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden p-4 hover:shadow-md transition duration-200 flex flex-col justify-between min-h-[120px]">
-                    <div className="space-y-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className={cn(
-                            "p-2 rounded-lg shrink-0",
-                            category.type === "income" ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                          )}>
-                            <FolderTree className="h-4 w-4" />
-                          </div>
-                          <p className="font-semibold text-sm text-zinc-800 dark:text-zinc-200">
-                            {category.name}
-                          </p>
+          <>
+            {/* Mobile: iOS-style list rows */}
+            <div className="lg:hidden rounded-2xl border border-zinc-200/60 dark:border-zinc-800/50 bg-card shadow-sm divide-y divide-zinc-100 dark:divide-zinc-800/50">
+              {categories.length ? (
+                categories.map((category) => {
+                  const mappedAccount = getAccount(accounts, category.accountId);
+                  return (
+                    <div key={category.id} className="group flex items-center justify-between px-4 py-3 transition hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={cn(
+                          "h-10 w-10 rounded-full flex items-center justify-center shrink-0",
+                          category.type === "income" ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                        )}>
+                          <FolderTree className="h-4 w-4" />
                         </div>
-                        {/* Action buttons (hover) */}
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center pr-1 gap-0.5">
-                          <button
-                            onClick={() => openEditCategory(category.id)}
-                            className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
-                            title="Edit Kategori"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => openDeleteConfirmation("category", category.id)}
-                            className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-md transition"
-                            title="Hapus Kategori"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Details */}
-                      <div className="flex flex-col gap-1.5 text-xs">
-                        <div className="flex items-center gap-1.5 text-muted-foreground font-medium">
-                          <span className="text-[10px] uppercase font-bold tracking-wider">Aliran:</span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">{category.name}</p>
                           {category.type === "income" ? (
                             <Badge tone="green">Pemasukan</Badge>
                           ) : (
@@ -501,233 +476,376 @@ export default function MasterDataPage() {
                           )}
                         </div>
                       </div>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button onClick={() => openEditCategory(category.id)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-lg transition" title="Edit Kategori">
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => openDeleteConfirmation("category", category.id)} className="p-2 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-lg transition" title="Hapus Kategori">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
-
-                    <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/50 text-[10px] text-muted-foreground font-mono flex items-center gap-1">
-                      <span className="font-semibold">COA:</span>
-                      <span className="truncate">{mappedAccount ? `${mappedAccount.code} — ${mappedAccount.name}` : "-"}</span>
-                    </div>
-                  </Card>
-                );
-              })
-            ) : (
-              <div className="col-span-full">
-                <EmptyState
-                  title="Kategori kosong"
-                  description="Buat kategori transaksi baru untuk memetakan pos pengeluaran dan pendapatan Anda."
-                />
-              </div>
-            )}
-          </div>
+                  );
+                })
+              ) : (
+                <div className="p-6">
+                  <EmptyState title="Kategori kosong" description="Buat kategori transaksi baru untuk memetakan pos pengeluaran dan pendapatan Anda." />
+                </div>
+              )}
+            </div>
+            {/* Desktop: card grid */}
+            <div className="hidden lg:grid lg:grid-cols-3 lg:gap-4">
+              {categories.length ? (
+                categories.map((category) => {
+                  const mappedAccount = getAccount(accounts, category.accountId);
+                  return (
+                    <Card key={category.id} className="group relative border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden p-4 hover:shadow-md transition duration-200 flex flex-col justify-between min-h-[120px]">
+                      <div className="space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className={cn(
+                              "p-2 rounded-lg shrink-0",
+                              category.type === "income" ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                            )}>
+                              <FolderTree className="h-4 w-4" />
+                            </div>
+                            <p className="font-semibold text-sm text-zinc-800 dark:text-zinc-200">
+                              {category.name}
+                            </p>
+                          </div>
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center pr-1 gap-0.5">
+                            <button onClick={() => openEditCategory(category.id)} className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition" title="Edit Kategori">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button onClick={() => openDeleteConfirmation("category", category.id)} className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-md transition" title="Hapus Kategori">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1.5 text-xs">
+                          <div className="flex items-center gap-1.5 text-muted-foreground font-medium">
+                            <span className="text-[10px] uppercase font-bold tracking-wider">Aliran:</span>
+                            {category.type === "income" ? (
+                              <Badge tone="green">Pemasukan</Badge>
+                            ) : (
+                              <Badge tone="red">Pengeluaran</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/50 text-[10px] text-muted-foreground font-mono flex items-center gap-1">
+                        <span className="font-semibold">COA:</span>
+                        <span className="truncate">{mappedAccount ? `${mappedAccount.code} — ${mappedAccount.name}` : "-"}</span>
+                      </div>
+                    </Card>
+                  );
+                })
+              ) : (
+                <div className="col-span-full">
+                  <EmptyState title="Kategori kosong" description="Buat kategori transaksi baru untuk memetakan pos pengeluaran dan pendapatan Anda." />
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {activeTab === "cash_accounts" && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {cashAccounts.length ? (
-              cashAccounts.map((cashAccount) => {
-                const mappedAccount = getAccount(accounts, cashAccount.accountId);
-
-                // Icon selection based on cash account type
-                const typeInfo = {
-                  cash: { icon: Wallet, bg: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-                  bank: { icon: Landmark, bg: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400" },
-                  ewallet: { icon: Smartphone, bg: "bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400" },
-                }[cashAccount.type] || { icon: Landmark, bg: "bg-zinc-50 dark:bg-zinc-800/50 text-zinc-650" };
-
-                const TypeIcon = typeInfo.icon;
-
-                return (
-                  <Card key={cashAccount.id} className="group relative border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden p-4 hover:shadow-md transition duration-200 flex flex-col justify-between min-h-[120px]">
-                    <div className="space-y-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className={cn("p-2 rounded-lg shrink-0", typeInfo.bg)}>
-                            <TypeIcon className="h-4 w-4" />
-                          </div>
-                          <p className="font-semibold text-sm text-zinc-800 dark:text-zinc-200">
-                            {cashAccount.name}
-                          </p>
+          <>
+            {/* Mobile: iOS-style list rows */}
+            <div className="lg:hidden rounded-2xl border border-zinc-200/60 dark:border-zinc-800/50 bg-card shadow-sm divide-y divide-zinc-100 dark:divide-zinc-800/50">
+              {cashAccounts.length ? (
+                cashAccounts.map((cashAccount) => {
+                  const typeInfo = {
+                    cash: { icon: Wallet, bg: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+                    bank: { icon: Landmark, bg: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400" },
+                    ewallet: { icon: Smartphone, bg: "bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400" },
+                  }[cashAccount.type] || { icon: Landmark, bg: "bg-zinc-50 dark:bg-zinc-800/50 text-zinc-650" };
+                  const TypeIcon = typeInfo.icon;
+                  return (
+                    <div key={cashAccount.id} className="group flex items-center justify-between px-4 py-3 transition hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={cn("h-10 w-10 rounded-full flex items-center justify-center shrink-0", typeInfo.bg)}>
+                          <TypeIcon className="h-4 w-4" />
                         </div>
-                        {/* Action buttons (hover) */}
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center pr-1 gap-0.5">
-                          <button
-                            onClick={() => openEditCashAccount(cashAccount.id)}
-                            className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
-                            title="Edit Dompet/Bank"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => openDeleteConfirmation("cash", cashAccount.id)}
-                            className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-md transition"
-                            title="Hapus Dompet/Bank"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Details */}
-                      <div className="flex flex-col gap-1.5 text-xs">
-                        <div className="flex items-center gap-1.5 text-muted-foreground font-medium">
-                          <span className="text-[10px] uppercase font-bold tracking-wider">Tipe:</span>
-                          <span className="capitalize font-semibold text-zinc-750 dark:text-zinc-350 text-xs">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">{cashAccount.name}</p>
+                          <span className="text-xs capitalize text-muted-foreground font-medium">
                             {cashAccount.type === "cash" ? "Kas Fisik" : cashAccount.type === "bank" ? "Transfer Bank" : "E-Wallet"}
                           </span>
                         </div>
                       </div>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button onClick={() => openEditCashAccount(cashAccount.id)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-lg transition" title="Edit">
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => openDeleteConfirmation("cash", cashAccount.id)} className="p-2 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-lg transition" title="Hapus">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
-
-                    <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/50 text-[10px] text-muted-foreground font-mono flex items-center gap-1">
-                      <span className="font-semibold">COA:</span>
-                      <span className="truncate">{mappedAccount ? `${mappedAccount.code} — ${mappedAccount.name}` : "-"}</span>
-                    </div>
-                  </Card>
-                );
-              })
-            ) : (
-              <div className="col-span-full">
-                <EmptyState
-                  title="Dompet Kas kosong"
-                  description="Daftarkan rekening bank atau kas fisik toko Anda untuk memulai pelacakan dana."
-                />
-              </div>
-            )}
-          </div>
+                  );
+                })
+              ) : (
+                <div className="p-6">
+                  <EmptyState title="Dompet Kas kosong" description="Daftarkan rekening bank atau kas fisik toko Anda untuk memulai pelacakan dana." />
+                </div>
+              )}
+            </div>
+            {/* Desktop: card grid */}
+            <div className="hidden lg:grid lg:grid-cols-3 lg:gap-4">
+              {cashAccounts.length ? (
+                cashAccounts.map((cashAccount) => {
+                  const mappedAccount = getAccount(accounts, cashAccount.accountId);
+                  const typeInfo = {
+                    cash: { icon: Wallet, bg: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+                    bank: { icon: Landmark, bg: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400" },
+                    ewallet: { icon: Smartphone, bg: "bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400" },
+                  }[cashAccount.type] || { icon: Landmark, bg: "bg-zinc-50 dark:bg-zinc-800/50 text-zinc-650" };
+                  const TypeIcon = typeInfo.icon;
+                  return (
+                    <Card key={cashAccount.id} className="group relative border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden p-4 hover:shadow-md transition duration-200 flex flex-col justify-between min-h-[120px]">
+                      <div className="space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className={cn("p-2 rounded-lg shrink-0", typeInfo.bg)}>
+                              <TypeIcon className="h-4 w-4" />
+                            </div>
+                            <p className="font-semibold text-sm text-zinc-800 dark:text-zinc-200">{cashAccount.name}</p>
+                          </div>
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center pr-1 gap-0.5">
+                            <button onClick={() => openEditCashAccount(cashAccount.id)} className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition" title="Edit Dompet/Bank">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button onClick={() => openDeleteConfirmation("cash", cashAccount.id)} className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-md transition" title="Hapus Dompet/Bank">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1.5 text-xs">
+                          <div className="flex items-center gap-1.5 text-muted-foreground font-medium">
+                            <span className="text-[10px] uppercase font-bold tracking-wider">Tipe:</span>
+                            <span className="capitalize font-semibold text-zinc-750 dark:text-zinc-350 text-xs">
+                              {cashAccount.type === "cash" ? "Kas Fisik" : cashAccount.type === "bank" ? "Transfer Bank" : "E-Wallet"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/50 text-[10px] text-muted-foreground font-mono flex items-center gap-1">
+                        <span className="font-semibold">COA:</span>
+                        <span className="truncate">{mappedAccount ? `${mappedAccount.code} — ${mappedAccount.name}` : "-"}</span>
+                      </div>
+                    </Card>
+                  );
+                })
+              ) : (
+                <div className="col-span-full">
+                  <EmptyState title="Dompet Kas kosong" description="Daftarkan rekening bank atau kas fisik toko Anda untuk memulai pelacakan dana." />
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {activeTab === "contacts" && (
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* Pelanggan Card */}
-            <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden">
-              <CardHeader className="border-b border-zinc-100 dark:border-zinc-800/50 pb-4 mb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <User className="h-4 w-4 text-emerald-500" /> Daftar Pelanggan (Customers)
-                </CardTitle>
-                <CardDescription>Entitas relasi pemasukan dana bisnis Anda.</CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                {customers.length ? (
-                  <div className="max-h-[420px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/50 scrollbar-thin">
-                    {customers.map((customer) => {
+          <>
+            {/* Mobile: stacked sections */}
+            <div className="lg:hidden space-y-5">
+              {/* Pelanggan Section */}
+              <div>
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <User className="h-3.5 w-3.5 text-emerald-500" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Pelanggan</span>
+                </div>
+                <div className="rounded-2xl border border-zinc-200/60 dark:border-zinc-800/50 bg-card shadow-sm divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                  {customers.length ? (
+                    customers.map((customer) => {
                       const isDeleted = customer.deletedAt != null;
                       const initial = customer.name ? customer.name.trim().charAt(0).toUpperCase() : "?";
                       return (
-                        <div key={customer.id} className={cn("group flex items-center justify-between p-3.5 transition duration-150 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10", isDeleted && "opacity-45")}>
+                        <div key={customer.id} className={cn("group flex items-center justify-between px-4 py-3 transition hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10", isDeleted && "opacity-45")}>
                           <div className="flex items-center gap-3 min-w-0">
-                            {/* Initials Avatar */}
-                            <div className="h-8 w-8 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center justify-center shrink-0">
+                            <div className="h-10 w-10 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-sm flex items-center justify-center shrink-0">
                               {initial}
                             </div>
-                            <div className="min-w-0">
-                              <p className={cn("text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate", isDeleted && "line-through text-muted-foreground")}>
-                                {customer.name}
-                              </p>
-                              <span className="text-[10px] text-muted-foreground">ID: {customer.id}</span>
+                            <p className={cn("text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate", isDeleted && "line-through text-muted-foreground")}>
+                              {customer.name}
+                            </p>
+                          </div>
+                          {isDeleted ? (
+                            <Badge tone="red">Dihapus</Badge>
+                          ) : (
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button onClick={() => openEditContact(customer.id, "customer")} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-lg transition" title="Edit Pelanggan">
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button onClick={() => openDeleteConfirmation("customer", customer.id)} className="p-2 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-lg transition" title="Hapus Pelanggan">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {isDeleted ? (
-                              <Badge tone="red">Deleted</Badge>
-                            ) : (
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 pr-1 flex items-center gap-0.5">
-                                <button
-                                  onClick={() => openEditContact(customer.id, "customer")}
-                                  className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
-                                  title="Edit Pelanggan"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => openDeleteConfirmation("customer", customer.id)}
-                                  className="p-1 hover:bg-red-50 dark:hover:bg-red-955/20 text-rose-600 rounded-md transition"
-                                  title="Hapus Pelanggan"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                          )}
                         </div>
                       );
-                    })}
-                  </div>
-                ) : (
-                  <div className="p-6">
-                    <EmptyState
-                      title="Pelanggan kosong"
-                      description="Tambahkan relasi pelanggan untuk tracking penjualan detail."
-                    />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                    })
+                  ) : (
+                    <div className="p-6">
+                      <EmptyState title="Pelanggan kosong" description="Tambahkan relasi pelanggan untuk tracking penjualan detail." />
+                    </div>
+                  )}
+                </div>
+              </div>
 
-            {/* Pemasok Card */}
-            <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden">
-              <CardHeader className="border-b border-zinc-100 dark:border-zinc-800/50 pb-4 mb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <User className="h-4 w-4 text-rose-500" /> Daftar Pemasok (Suppliers)
-                </CardTitle>
-                <CardDescription>Entitas relasi pengeluaran beban belanja.</CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                {suppliers.length ? (
-                  <div className="max-h-[420px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/50 scrollbar-thin">
-                    {suppliers.map((supplier) => {
+              {/* Pemasok Section */}
+              <div>
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <User className="h-3.5 w-3.5 text-rose-500" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Pemasok</span>
+                </div>
+                <div className="rounded-2xl border border-zinc-200/60 dark:border-zinc-800/50 bg-card shadow-sm divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                  {suppliers.length ? (
+                    suppliers.map((supplier) => {
                       const isDeleted = supplier.deletedAt != null;
                       const initial = supplier.name ? supplier.name.trim().charAt(0).toUpperCase() : "?";
                       return (
-                        <div key={supplier.id} className={cn("group flex items-center justify-between p-3.5 transition duration-150 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10", isDeleted && "opacity-45")}>
+                        <div key={supplier.id} className={cn("group flex items-center justify-between px-4 py-3 transition hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10", isDeleted && "opacity-45")}>
                           <div className="flex items-center gap-3 min-w-0">
-                            {/* Initials Avatar */}
-                            <div className="h-8 w-8 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center shrink-0">
+                            <div className="h-10 w-10 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold text-sm flex items-center justify-center shrink-0">
                               {initial}
                             </div>
-                            <div className="min-w-0">
-                              <p className={cn("text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate", isDeleted && "line-through text-muted-foreground")}>
-                                {supplier.name}
-                              </p>
-                              <span className="text-[10px] text-muted-foreground">ID: {supplier.id}</span>
+                            <p className={cn("text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate", isDeleted && "line-through text-muted-foreground")}>
+                              {supplier.name}
+                            </p>
+                          </div>
+                          {isDeleted ? (
+                            <Badge tone="red">Dihapus</Badge>
+                          ) : (
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button onClick={() => openEditContact(supplier.id, "supplier")} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-lg transition" title="Edit Pemasok">
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button onClick={() => openDeleteConfirmation("supplier", supplier.id)} className="p-2 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-lg transition" title="Hapus Pemasok">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {isDeleted ? (
-                              <Badge tone="red">Deleted</Badge>
-                            ) : (
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 pr-1 flex items-center gap-0.5">
-                                <button
-                                  onClick={() => openEditContact(supplier.id, "supplier")}
-                                  className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
-                                  title="Edit Pemasok"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => openDeleteConfirmation("supplier", supplier.id)}
-                                  className="p-1 hover:bg-red-50 dark:hover:bg-red-955/20 text-rose-600 rounded-md transition"
-                                  title="Hapus Pemasok"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                          )}
                         </div>
                       );
-                    })}
-                  </div>
-                ) : (
-                  <div className="p-6">
-                    <EmptyState
-                      title="Pemasok kosong"
-                      description="Tambahkan relasi supplier untuk pencatatan procurement belanja barang."
-                    />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                    })
+                  ) : (
+                    <div className="p-6">
+                      <EmptyState title="Pemasok kosong" description="Tambahkan relasi supplier untuk pencatatan procurement belanja barang." />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            {/* Desktop: side-by-side cards */}
+            <div className="hidden lg:grid lg:grid-cols-2 lg:gap-6">
+              {/* Pelanggan Card */}
+              <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden">
+                <CardHeader className="border-b border-zinc-100 dark:border-zinc-800/50 pb-4 mb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <User className="h-4 w-4 text-emerald-500" /> Daftar Pelanggan (Customers)
+                  </CardTitle>
+                  <CardDescription>Entitas relasi pemasukan dana bisnis Anda.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {customers.length ? (
+                    <div className="max-h-[420px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/50 scrollbar-thin">
+                      {customers.map((customer) => {
+                        const isDeleted = customer.deletedAt != null;
+                        const initial = customer.name ? customer.name.trim().charAt(0).toUpperCase() : "?";
+                        return (
+                          <div key={customer.id} className={cn("group flex items-center justify-between p-3.5 transition duration-150 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10", isDeleted && "opacity-45")}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="h-8 w-8 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center justify-center shrink-0">
+                                {initial}
+                              </div>
+                              <div className="min-w-0">
+                                <p className={cn("text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate", isDeleted && "line-through text-muted-foreground")}>
+                                  {customer.name}
+                                </p>
+                                <span className="text-[10px] text-muted-foreground">ID: {customer.id}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isDeleted ? (
+                                <Badge tone="red">Deleted</Badge>
+                              ) : (
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 pr-1 flex items-center gap-0.5">
+                                  <button onClick={() => openEditContact(customer.id, "customer")} className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition" title="Edit Pelanggan">
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button onClick={() => openDeleteConfirmation("customer", customer.id)} className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-md transition" title="Hapus Pelanggan">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-6">
+                      <EmptyState title="Pelanggan kosong" description="Tambahkan relasi pelanggan untuk tracking penjualan detail." />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+              {/* Pemasok Card */}
+              <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm overflow-hidden">
+                <CardHeader className="border-b border-zinc-100 dark:border-zinc-800/50 pb-4 mb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <User className="h-4 w-4 text-rose-500" /> Daftar Pemasok (Suppliers)
+                  </CardTitle>
+                  <CardDescription>Entitas relasi pengeluaran beban belanja.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {suppliers.length ? (
+                    <div className="max-h-[420px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/50 scrollbar-thin">
+                      {suppliers.map((supplier) => {
+                        const isDeleted = supplier.deletedAt != null;
+                        const initial = supplier.name ? supplier.name.trim().charAt(0).toUpperCase() : "?";
+                        return (
+                          <div key={supplier.id} className={cn("group flex items-center justify-between p-3.5 transition duration-150 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10", isDeleted && "opacity-45")}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="h-8 w-8 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center shrink-0">
+                                {initial}
+                              </div>
+                              <div className="min-w-0">
+                                <p className={cn("text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate", isDeleted && "line-through text-muted-foreground")}>
+                                  {supplier.name}
+                                </p>
+                                <span className="text-[10px] text-muted-foreground">ID: {supplier.id}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isDeleted ? (
+                                <Badge tone="red">Deleted</Badge>
+                              ) : (
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 pr-1 flex items-center gap-0.5">
+                                  <button onClick={() => openEditContact(supplier.id, "supplier")} className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition" title="Edit Pemasok">
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button onClick={() => openDeleteConfirmation("supplier", supplier.id)} className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 text-rose-600 rounded-md transition" title="Hapus Pemasok">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-6">
+                      <EmptyState title="Pemasok kosong" description="Tambahkan relasi supplier untuk pencatatan procurement belanja barang." />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </>
         )}
       </div>
 

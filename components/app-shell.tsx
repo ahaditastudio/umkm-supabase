@@ -12,7 +12,6 @@ import {
   Landmark,
   Loader2,
   LogOut,
-  Menu,
   Moon,
   ReceiptText,
   Settings,
@@ -29,6 +28,7 @@ import { isFirebaseConfigured } from "@/lib/firebase";
 import { useCompanySync } from "@/lib/firestore/use-company-sync";
 import { cn } from "@/lib/utils";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
+import { BottomTabBar } from "@/components/bottom-tab-bar";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home },
@@ -48,7 +48,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const profile = useKasFlowStore((state) => state.profile);
   const collapsed = useKasFlowStore((state) => state.sidebarCollapsed);
   const setCollapsed = useKasFlowStore((state) => state.setSidebarCollapsed);
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -142,7 +141,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link
               key={item.href}
               href={item.href}
-              onClick={() => setMobileOpen(false)}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium transition duration-200 tracking-wide",
                 active
@@ -194,42 +192,19 @@ export function AppShell({ children }: { children: ReactNode }) {
         {sidebar}
       </div>
 
-      {/* Mobile Drawer (with slide-in overlay) */}
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <button
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300"
-            aria-label="Close menu"
-            onClick={() => setMobileOpen(false)}
-          />
-          <div className="absolute inset-y-0 left-0 animate-in slide-in-from-left duration-300 ease-in-out">
-            {sidebar}
-          </div>
-        </div>
-      ) : null}
-
       <div
         className={cn("transition-all duration-300", collapsed ? "lg:pl-16" : "lg:pl-64")}
       >
         {/* Top Sticky Header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-md sm:px-6 border-zinc-200/50 dark:border-zinc-800/40">
-          <div className="flex items-center gap-3">
-            <button
-              className="lg:hidden flex h-9 w-9 items-center justify-center rounded-lg hover:bg-muted text-muted-foreground transition duration-200 border"
-              onClick={() => setMobileOpen(true)}
-            >
-              <Menu className="h-4 w-4" />
-            </button>
-            <div>
-              <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground leading-none mb-1">
-                KasFlow SaaS Platform
-              </p>
-              <h1 className="text-sm font-semibold sm:text-base text-foreground leading-none">
+        <header className="sticky top-0 z-30 flex h-14 lg:h-16 items-center justify-between border-b bg-background/80 px-3 lg:px-6 backdrop-blur-md border-zinc-200/50 dark:border-zinc-800/40">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="min-w-0">
+              <h1 className="text-sm font-semibold text-foreground leading-none truncate">
                 {profile.businessName}
               </h1>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setDark(!dark)}
               className="flex h-9 w-9 items-center justify-center rounded-lg border hover:bg-muted text-muted-foreground transition duration-200"
@@ -252,10 +227,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
 
         {/* Page Content area */}
-        <main className="mx-auto w-full max-w-7xl p-4 sm:p-6 md:p-8 animate-in fade-in duration-500">
+        <main key={pathname} className="mx-auto w-full max-w-7xl px-4 py-3 sm:px-6 sm:py-6 md:px-8 md:py-8 pb-24 lg:pb-8 animate-spring-in lg:animate-in lg:fade-in lg:duration-300">
           {children}
         </main>
       </div>
+
+      {/* Mobile Bottom Tab Bar */}
+      <BottomTabBar />
     </div>
   );
 }

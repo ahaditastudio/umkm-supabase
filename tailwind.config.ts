@@ -17,9 +17,17 @@ const config: Config = {
       spacing: {
         "8.5": "2.125rem", // 34px
         "9.5": "2.375rem", // 38px
+        "safe-top": "env(safe-area-inset-top, 0px)",
+        "safe-bottom": "env(safe-area-inset-bottom, 0px)",
+        "safe-left": "env(safe-area-inset-left, 0px)",
+        "safe-right": "env(safe-area-inset-right, 0px)",
+        "tab-bar": "64px",
+        "tab-bar-safe": "calc(64px + env(safe-area-inset-bottom, 0px))",
       },
       borderRadius: {
         xl: "12px",
+        "2xl": "16px",
+        "3xl": "20px",
       },
       colors: {
         background: "hsl(var(--background))",
