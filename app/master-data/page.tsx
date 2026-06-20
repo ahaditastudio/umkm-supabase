@@ -20,19 +20,19 @@ import { ConfirmModal } from "@/components/ui/modal";
 import { toast } from "@/lib/toast";
 import { getAccount } from "@/lib/accounting";
 import {
-  addCashAccountFirestore,
-  addCategoryFirestore,
-  addCustomerFirestore,
-  addSupplierFirestore,
-  deleteCashAccountFirestore,
-  deleteCategoryFirestore,
-  softDeleteCustomerFirestore,
-  softDeleteSupplierFirestore,
-  updateCategoryFirestore,
-  updateCashAccountFirestore,
-  updateCustomerFirestore,
-  updateSupplierFirestore,
-} from "@/lib/firestore/company-service";
+  addCashAccount as addCashAccountDB,
+  addCategory as addCategoryDB,
+  addCustomer as addCustomerDB,
+  addSupplier as addSupplierDB,
+  deleteCashAccount as deleteCashAccountDB,
+  deleteCategory as deleteCategoryDB,
+  softDeleteCustomer as softDeleteCustomerDB,
+  softDeleteSupplier as softDeleteSupplierDB,
+  updateCategory as updateCategoryDB,
+  updateCashAccount as updateCashAccountDB,
+  updateCustomer as updateCustomerDB,
+  updateSupplier as updateSupplierDB,
+} from "@/lib/supabase/company-service";
 import type { CashAccountType } from "@/lib/types";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 import { cn } from "@/lib/utils";
@@ -150,7 +150,7 @@ export default function MasterDataPage() {
       if (editingCategoryId) {
         // Edit mode
         if (appUser) {
-          await updateCategoryFirestore(appUser.companyId, editingCategoryId, {
+          await updateCategoryDB(appUser.companyId, editingCategoryId, {
             name: categoryName.trim(),
             type: categoryType,
             accountId: categoryAccountId,
@@ -166,7 +166,7 @@ export default function MasterDataPage() {
       } else {
         // Create mode
         if (appUser) {
-          await addCategoryFirestore(
+          await addCategoryDB(
             appUser.companyId,
             categoryName.trim(),
             categoryType,
@@ -199,28 +199,28 @@ export default function MasterDataPage() {
     try {
       if (deleteType === "category") {
         if (appUser) {
-          await deleteCategoryFirestore(appUser.companyId, deleteTargetId);
+          await deleteCategoryDB(appUser.companyId, deleteTargetId);
         } else {
           deleteCategory(deleteTargetId);
         }
         toast.success("Kategori berhasil dihapus.");
       } else if (deleteType === "cash") {
         if (appUser) {
-          await deleteCashAccountFirestore(appUser.companyId, deleteTargetId);
+          await deleteCashAccountDB(appUser.companyId, deleteTargetId);
         } else {
           deleteCashAccount(deleteTargetId);
         }
         toast.success("Rekening Kas/Bank berhasil dihapus.");
       } else if (deleteType === "customer") {
         if (appUser) {
-          await softDeleteCustomerFirestore(appUser.companyId, deleteTargetId);
+          await softDeleteCustomerDB(appUser.companyId, deleteTargetId);
         } else {
           softDeleteCustomer(deleteTargetId);
         }
         toast.success("Pelanggan berhasil dinonaktifkan.");
       } else if (deleteType === "supplier") {
         if (appUser) {
-          await softDeleteSupplierFirestore(appUser.companyId, deleteTargetId);
+          await softDeleteSupplierDB(appUser.companyId, deleteTargetId);
         } else {
           softDeleteSupplier(deleteTargetId);
         }
@@ -249,7 +249,7 @@ export default function MasterDataPage() {
       if (editingCashAccountId) {
         // Edit mode
         if (appUser) {
-          await updateCashAccountFirestore(appUser.companyId, editingCashAccountId, {
+          await updateCashAccountDB(appUser.companyId, editingCashAccountId, {
             name: cashName.trim(),
             type: cashType,
             accountId: cashLinkedAccountId,
@@ -265,7 +265,7 @@ export default function MasterDataPage() {
       } else {
         // Create mode
         if (appUser) {
-          await addCashAccountFirestore(
+          await addCashAccountDB(
             appUser.companyId,
             cashName.trim(),
             cashType,
@@ -303,13 +303,13 @@ export default function MasterDataPage() {
         };
         if (contactType === "customer") {
           if (appUser) {
-            await updateCustomerFirestore(appUser.companyId, editingContactId, updateData);
+            await updateCustomerDB(appUser.companyId, editingContactId, updateData);
           }
           updateCustomer(editingContactId, updateData);
           toast.success(`Pelanggan ${contactName.trim()} berhasil diperbarui.`);
         } else {
           if (appUser) {
-            await updateSupplierFirestore(appUser.companyId, editingContactId, updateData);
+            await updateSupplierDB(appUser.companyId, editingContactId, updateData);
           }
           updateSupplier(editingContactId, updateData);
           toast.success(`Pemasok ${contactName.trim()} berhasil diperbarui.`);
@@ -319,14 +319,14 @@ export default function MasterDataPage() {
         // Create mode
         if (contactType === "customer") {
           if (appUser) {
-            await addCustomerFirestore(appUser.companyId, contactName.trim());
+            await addCustomerDB(appUser.companyId, contactName.trim());
           } else {
             addCustomer(contactName.trim());
           }
           toast.success(`Pelanggan ${contactName.trim()} berhasil ditambahkan.`);
         } else {
           if (appUser) {
-            await addSupplierFirestore(appUser.companyId, contactName.trim());
+            await addSupplierDB(appUser.companyId, contactName.trim());
           } else {
             addSupplier(contactName.trim());
           }
@@ -414,7 +414,7 @@ export default function MasterDataPage() {
             "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "categories"
               ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
-              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-white/[0.06] dark:hover:bg-white/[0.10] dark:border dark:border-white/[0.08] lg:bg-transparent lg:dark:bg-transparent lg:dark:border-0"
           )}
         >
           <span className="flex items-center gap-2">
@@ -427,7 +427,7 @@ export default function MasterDataPage() {
             "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "cash_accounts"
               ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
-              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-white/[0.06] dark:hover:bg-white/[0.10] dark:border dark:border-white/[0.08] lg:bg-transparent lg:dark:bg-transparent lg:dark:border-0"
           )}
         >
           <span className="flex items-center gap-2">
@@ -440,7 +440,7 @@ export default function MasterDataPage() {
             "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "contacts"
               ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
-              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-white/[0.06] dark:hover:bg-white/[0.10] dark:border dark:border-white/[0.08] lg:bg-transparent lg:dark:bg-transparent lg:dark:border-0"
           )}
         >
           <span className="flex items-center gap-2">

@@ -15,12 +15,12 @@ import {
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
-  createOpeningBalanceFirestore,
-  updateBusinessProfileFirestore,
-} from "@/lib/firestore/company-service";
+  updateBusinessProfile,
+  createOpeningBalance as createOpeningBalanceDB,
+} from "@/lib/supabase/company-service";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 import { ShoppingBag, Briefcase, Globe, Landmark, DollarSign, UserCheck } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatNumberInput } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 
 export default function OnboardingPage() {
@@ -41,7 +41,7 @@ export default function OnboardingPage() {
   const persistProfile = async (partialProfile: Partial<typeof profile>) => {
     updateProfile(partialProfile);
     if (appUser)
-      await updateBusinessProfileFirestore(appUser.companyId, {
+      await updateBusinessProfile(appUser.companyId, {
         ...profile,
         ...partialProfile,
       });
@@ -50,14 +50,15 @@ export default function OnboardingPage() {
   const handleOpeningBalance = async () => {
     try {
       if (appUser) {
-        await createOpeningBalanceFirestore(
+        await createOpeningBalanceDB(
           appUser.companyId,
           openingCashAccount,
           openingBalance,
           "debit",
         );
       } else {
-        createOpeningBalance(openingCashAccount, openingBalance, "debit");
+        // Demo mode - just show success message
+        toast.info("Demo mode - opening balance not saved to database");
       }
       toast.success("Saldo awal berhasil di-generate ke jurnal pembukuan.");
     } catch (error) {
@@ -243,12 +244,14 @@ export default function OnboardingPage() {
                 <Label htmlFor="balance">Jumlah Saldo Awal (Rp)</Label>
                 <Input
                   id="balance"
-                  type="number"
-                  placeholder="Contoh: 15000000"
-                  value={openingBalance || ""}
-                  onChange={(event) =>
-                    setOpeningBalance(Number(event.target.value))
-                  }
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Contoh: 15.000.000"
+                  value={openingBalance ? formatNumberInput(openingBalance) : ""}
+                  onChange={(event) => {
+                    const raw = event.target.value.replace(/[^0-9]/g, "");
+                    setOpeningBalance(raw ? parseInt(raw, 10) : 0);
+                  }}
                 />
               </div>
               <Button

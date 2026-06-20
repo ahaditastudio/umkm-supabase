@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import {
   buildLedgerEntries,
+  appendLedgerEntries,
   createDemoCustomers,
   createDemoSuppliers,
   createOpeningBalanceJournal,
@@ -15,6 +16,7 @@ import {
   defaultCategories,
   defaultTaxSettings,
   DEMO_COMPANY_ID,
+  generateClosingEntries,
   generateJournalFromTransaction,
   isDateInClosedPeriod,
 } from "@/lib/accounting";
@@ -33,6 +35,11 @@ import type {
   Supplier,
   TaxSettings,
   Transaction,
+  MarketplaceConnection,
+  MarketplaceAccountMapping,
+  MarketplaceOrder,
+  MarketplaceStatement,
+  MarketplaceSyncLog,
 } from "@/lib/types";
 import type { TransactionFormValues } from "@/lib/validation";
 import { uid } from "@/lib/utils";
@@ -79,10 +86,18 @@ export type KasFlowState = {
   suppliers: Supplier[];
   transactions: Transaction[];
   journalEntries: JournalEntry[];
+  journalEntriesLoaded: boolean;
   ledgerEntries: LedgerEntry[];
   taxSettings: TaxSettings;
   accountingPeriods: AccountingPeriod[];
   auditLogs: AuditLog[];
+  // Marketplace state
+  marketplaceConnections: MarketplaceConnection[];
+  marketplaceAccountMappings: MarketplaceAccountMapping[];
+  marketplaceOrders: MarketplaceOrder[];
+  marketplaceStatements: MarketplaceStatement[];
+  marketplaceSyncLogs: MarketplaceSyncLog[];
+  loadJournalEntries: () => Promise<void>;
   setSidebarCollapsed: (value: boolean) => void;
   updateProfile: (profile: Partial<BusinessProfile>) => void;
   updateTaxSettings: (settings: Partial<TaxSettings>) => void;
@@ -93,8 +108,16 @@ export type KasFlowState = {
   addTransaction: (values: TransactionFormValues) => void;
   softDeleteTransaction: (transactionId: string) => void;
   restoreTransaction: (transactionId: string) => void;
-  generateDummyData: (count: number) => void;
-  seedDemoCompany: () => void;
+  generateDummyData: (count: number) => {
+    transactions: Transaction[];
+    journalEntries: JournalEntry[];
+  };
+  seedDemoCompany: () => {
+    transactions: Transaction[];
+    journalEntries: JournalEntry[];
+    customers: Customer[];
+    suppliers: Supplier[];
+  };
   resetBusinessData: () => void;
   createOpeningBalance: (
     accountId: string,
@@ -148,6 +171,32 @@ export type KasFlowState = {
     periodId: string,
     data: Partial<Pick<AccountingPeriod, "startDate" | "endDate">>,
   ) => void;
+  // Marketplace actions
+  addMarketplaceConnection: (
+    connection: Omit<MarketplaceConnection, "id" | "createdAt" | "updatedAt">,
+  ) => MarketplaceConnection;
+  updateMarketplaceConnection: (
+    connectionId: string,
+    data: Partial<MarketplaceConnection>,
+  ) => void;
+  disconnectMarketplace: (connectionId: string) => void;
+  addMarketplaceAccountMapping: (
+    mapping: Omit<MarketplaceAccountMapping, "id" | "createdAt" | "updatedAt">,
+  ) => MarketplaceAccountMapping;
+  updateMarketplaceAccountMapping: (
+    mappingId: string,
+    data: Partial<MarketplaceAccountMapping>,
+  ) => void;
+  addMarketplaceOrder: (order: MarketplaceOrder) => void;
+  bulkAddMarketplaceOrders: (orders: MarketplaceOrder[]) => void;
+  addMarketplaceStatement: (statement: MarketplaceStatement) => void;
+  bulkAddMarketplaceStatements: (statements: MarketplaceStatement[]) => void;
+  addMarketplaceSyncLog: (log: MarketplaceSyncLog) => void;
+  updateMarketplaceSyncLog: (logId: string, data: Partial<MarketplaceSyncLog>) => void;
+  addMarketplaceTransaction: (
+    transaction: Omit<Transaction, "id" | "createdAt" | "updatedAt">,
+  ) => Transaction;
+  clearMarketplaceData: (connectionId: string) => void;
 };
 
 const openingJournal = createOpeningBalanceJournal();
@@ -164,11 +213,45 @@ export const useKasFlowStore = create<KasFlowState>()(
       customers: [],
       suppliers: [],
       transactions: [],
-      journalEntries: [openingJournal],
-      ledgerEntries: refreshLedger([openingJournal], defaultAccounts),
+      journalEntries: [],
+      journalEntriesLoaded: false,
+      ledgerEntries: [],
       taxSettings: defaultTaxSettings,
       accountingPeriods: [defaultAccountingPeriod],
       auditLogs: [audit("create", "opening_balance", openingJournal)],
+      marketplaceConnections: [],
+      marketplaceAccountMappings: [],
+      marketplaceOrders: [],
+      marketplaceStatements: [],
+      marketplaceSyncLogs: [],
+      loadJournalEntries: async () => {
+        const state = get();
+        console.log('[loadJournalEntries] Called, already loaded:', state.journalEntriesLoaded);
+
+        if (state.journalEntriesLoaded) return;
+
+        // Validate companyId
+        if (!state.companyId) {
+          console.warn('[loadJournalEntries] companyId not available yet, skipping');
+          return;
+        }
+
+        try {
+          console.log('[loadJournalEntries] Loading journal entries for company:', state.companyId);
+          const { getJournalEntries } = await import("@/lib/supabase/company-service");
+          const journals = await getJournalEntries(state.companyId);
+          console.log('[loadJournalEntries] Loaded', journals.length, 'journal entries');
+
+          set({
+            journalEntries: journals,
+            journalEntriesLoaded: true,
+            ledgerEntries: refreshLedger(journals, state.accounts),
+          });
+          console.log('[loadJournalEntries] State updated successfully');
+        } catch (error) {
+          console.error("Failed to load journal entries:", error);
+        }
+      },
       setSidebarCollapsed: (value) => set({ sidebarCollapsed: value }),
       updateProfile: (profile) =>
         set((state) => ({
@@ -272,13 +355,27 @@ export const useKasFlowStore = create<KasFlowState>()(
           transaction,
           state.categories,
           state.cashAccounts,
+          state.accounts,
         );
         const journalEntries = [journal, ...state.journalEntries];
+
+        // Try incremental ledger computation first (faster)
+        const incrementalLedger = appendLedgerEntries(
+          journal,
+          state.ledgerEntries,
+          state.accounts
+        );
+
+        // Fallback to full rebuild if incremental fails (e.g., backdated transaction)
+        const ledgerEntries = incrementalLedger
+          ? [...state.ledgerEntries, ...incrementalLedger]
+          : refreshLedger(journalEntries, state.accounts);
 
         set({
           transactions: [transaction, ...state.transactions],
           journalEntries,
-          ledgerEntries: refreshLedger(journalEntries, state.accounts),
+          journalEntriesLoaded: true,
+          ledgerEntries,
           auditLogs: [
             audit("create", "transactions", { transaction, journal }),
             ...state.auditLogs,
@@ -304,6 +401,7 @@ export const useKasFlowStore = create<KasFlowState>()(
           return {
             transactions,
             journalEntries,
+            journalEntriesLoaded: true,
             ledgerEntries: refreshLedger(journalEntries, state.accounts),
             auditLogs: [
               audit("delete", "transactions", { transactionId }, transaction),
@@ -334,6 +432,7 @@ export const useKasFlowStore = create<KasFlowState>()(
           return {
             transactions,
             journalEntries,
+            journalEntriesLoaded: true,
             ledgerEntries: refreshLedger(journalEntries, state.accounts),
             auditLogs: [
               audit("restore", "recycle_bin", { transactionId }),
@@ -342,8 +441,9 @@ export const useKasFlowStore = create<KasFlowState>()(
           };
         }),
       generateDummyData: (count) =>
+        // @ts-expect-error -- zustand partial return inference
         set((state) => {
-          const generatedTransactions = createSeedTransactions(count);
+          const generatedTransactions = createSeedTransactions(count, 6, state.companyId);
           const existingIds = new Set(
             state.transactions.map((transaction) => transaction.id),
           );
@@ -362,6 +462,7 @@ export const useKasFlowStore = create<KasFlowState>()(
               transaction,
               state.categories,
               state.cashAccounts,
+              state.accounts,
             ),
           );
           const journalEntries = [...journals, ...state.journalEntries];
@@ -369,6 +470,7 @@ export const useKasFlowStore = create<KasFlowState>()(
           return {
             transactions: [...filteredTransactions, ...state.transactions],
             journalEntries,
+            journalEntriesLoaded: true,
             ledgerEntries: refreshLedger(journalEntries, state.accounts),
             auditLogs: [
               audit("create", "dummy_generator", { count }),
@@ -377,9 +479,10 @@ export const useKasFlowStore = create<KasFlowState>()(
           };
         }),
       seedDemoCompany: () =>
+        // @ts-expect-error -- zustand partial return inference
         set((state) => {
-          const opening = createOpeningBalanceJournal(15_000_000);
-          const transactions = createSeedTransactions(300, 6);
+          const opening = createOpeningBalanceJournal(state.companyId, 15_000_000);
+          const transactions = createSeedTransactions(300, 6, state.companyId);
           const journals = [opening, ...createSeedJournals(transactions)];
 
           return {
@@ -392,9 +495,10 @@ export const useKasFlowStore = create<KasFlowState>()(
             },
             transactions,
             journalEntries: journals,
+            journalEntriesLoaded: true,
             ledgerEntries: refreshLedger(journals, state.accounts),
-            customers: createDemoCustomers(100),
-            suppliers: createDemoSuppliers(25),
+            customers: createDemoCustomers(100, state.companyId),
+            suppliers: createDemoSuppliers(25, state.companyId),
             auditLogs: [
               audit("create", "seed_demo_company", {
                 transactions: 300,
@@ -408,6 +512,7 @@ export const useKasFlowStore = create<KasFlowState>()(
         set((state) => ({
           transactions: [],
           journalEntries: [],
+          journalEntriesLoaded: true,
           ledgerEntries: [],
           customers: [],
           suppliers: [],
@@ -471,9 +576,21 @@ export const useKasFlowStore = create<KasFlowState>()(
           };
           const journalEntries = [journal, ...state.journalEntries];
 
+          // Try incremental ledger computation first
+          const incrementalLedger = appendLedgerEntries(
+            journal,
+            state.ledgerEntries,
+            state.accounts
+          );
+
+          const ledgerEntries = incrementalLedger
+            ? [...state.ledgerEntries, ...incrementalLedger]
+            : refreshLedger(journalEntries, state.accounts);
+
           return {
             journalEntries,
-            ledgerEntries: refreshLedger(journalEntries, state.accounts),
+            journalEntriesLoaded: true,
+            ledgerEntries,
             auditLogs: [
               audit("create", "opening_balance", journal),
               ...state.auditLogs,
@@ -487,25 +604,60 @@ export const useKasFlowStore = create<KasFlowState>()(
 
         set((state) => {
           const now = new Date().toISOString();
+          const closedPeriod = state.accountingPeriods[0];
+
+          // Generate closing entries for this period
+          const closingEntries = generateClosingEntries(
+            state.companyId,
+            closedPeriod.startDate,
+            closedPeriod.endDate,
+            state.journalEntries,
+            state.accounts
+          );
+
+          // Close the current period
           const accountingPeriods = state.accountingPeriods.map(
             (period, index) =>
               index === 0
                 ? { ...period, status: "closed" as const, closedAt: now }
                 : period,
           );
-          const journalEntries = state.journalEntries.map((journal) =>
-            journal.date >= state.accountingPeriods[0].startDate &&
-            journal.date <= state.accountingPeriods[0].endDate
+
+          // Lock journal entries in the closed period
+          const lockedJournals = state.journalEntries.map((journal) =>
+            journal.date >= closedPeriod.startDate &&
+            journal.date <= closedPeriod.endDate
               ? { ...journal, status: "locked" as const, updatedAt: now }
               : journal,
           );
 
+          // Add closing entries to journals
+          const journalEntries = [...closingEntries, ...lockedJournals];
+
+          // Auto-create new open period starting from next day
+          const endDateObj = new Date(closedPeriod.endDate);
+          const newStartDate = new Date(endDateObj.getTime() + 86400000); // +1 day
+          const newEndDate = new Date(newStartDate.getFullYear(), newStartDate.getMonth() + 1, 0); // end of next month
+
+          const newPeriod: AccountingPeriod = {
+            id: uid("period"),
+            companyId: state.companyId,
+            startDate: newStartDate.toISOString().split('T')[0],
+            endDate: newEndDate.toISOString().split('T')[0],
+            status: "open" as const,
+          };
+
           return {
-            accountingPeriods,
+            accountingPeriods: [newPeriod, ...accountingPeriods],
             journalEntries,
+            journalEntriesLoaded: true,
             ledgerEntries: refreshLedger(journalEntries, state.accounts),
             auditLogs: [
-              audit("close_period", "closing_history", accountingPeriods[0]),
+              audit("close_period", "closing_history", {
+                closedPeriod,
+                newPeriod,
+                closingEntries: closingEntries.length
+              }),
               ...state.auditLogs,
             ],
           };
@@ -699,6 +851,7 @@ export const useKasFlowStore = create<KasFlowState>()(
               ? { accountingPeriods: data.accountingPeriods }
               : {}),
             journalEntries,
+            journalEntriesLoaded: true,
             ledgerEntries: refreshLedger(journalEntries, accounts),
             auditLogs: [
               audit("restore", "backup_history", { source: "json_backup" }),
@@ -706,11 +859,175 @@ export const useKasFlowStore = create<KasFlowState>()(
             ],
           };
         }),
+      // Marketplace actions
+      addMarketplaceConnection: (connection) => {
+        const now = new Date().toISOString();
+        const newConnection: MarketplaceConnection = {
+          ...connection,
+          id: uid("mkp_conn"),
+          createdAt: now,
+          updatedAt: now,
+        };
+        set((state) => ({
+          marketplaceConnections: [newConnection, ...state.marketplaceConnections],
+          auditLogs: [
+            audit("create", "marketplace_connections", newConnection),
+            ...state.auditLogs,
+          ],
+        }));
+        return newConnection;
+      },
+      updateMarketplaceConnection: (connectionId, data) =>
+        set((state) => ({
+          marketplaceConnections: state.marketplaceConnections.map((c) =>
+            c.id === connectionId ? { ...c, ...data, updatedAt: new Date().toISOString() } : c,
+          ),
+          auditLogs: [
+            audit("update", "marketplace_connections", data, { connectionId }),
+            ...state.auditLogs,
+          ],
+        })),
+      disconnectMarketplace: (connectionId) =>
+        set((state) => ({
+          marketplaceConnections: state.marketplaceConnections.map((c) =>
+            c.id === connectionId
+              ? { ...c, status: "disconnected" as const, deletedAt: new Date().toISOString() }
+              : c,
+          ),
+          auditLogs: [
+            audit("delete", "marketplace_connections", { connectionId }),
+            ...state.auditLogs,
+          ],
+        })),
+      addMarketplaceAccountMapping: (mapping) => {
+        const now = new Date().toISOString();
+        const newMapping: MarketplaceAccountMapping = {
+          ...mapping,
+          id: uid("mkp_map"),
+          createdAt: now,
+          updatedAt: now,
+        };
+        set((state) => ({
+          marketplaceAccountMappings: [newMapping, ...state.marketplaceAccountMappings],
+          auditLogs: [
+            audit("create", "marketplace_account_mapping", newMapping),
+            ...state.auditLogs,
+          ],
+        }));
+        return newMapping;
+      },
+      updateMarketplaceAccountMapping: (mappingId, data) =>
+        set((state) => ({
+          marketplaceAccountMappings: state.marketplaceAccountMappings.map((m) =>
+            m.id === mappingId ? { ...m, ...data, updatedAt: new Date().toISOString() } : m,
+          ),
+          auditLogs: [
+            audit("update", "marketplace_account_mapping", data, { mappingId }),
+            ...state.auditLogs,
+          ],
+        })),
+      addMarketplaceOrder: (order) =>
+        set((state) => ({
+          marketplaceOrders: [order, ...state.marketplaceOrders],
+        })),
+      bulkAddMarketplaceOrders: (orders) =>
+        set((state) => ({
+          marketplaceOrders: orders,
+        })),
+      addMarketplaceStatement: (statement) =>
+        set((state) => ({
+          marketplaceStatements: [statement, ...state.marketplaceStatements],
+        })),
+      bulkAddMarketplaceStatements: (statements) =>
+        set((state) => ({
+          marketplaceStatements: statements,
+        })),
+      addMarketplaceSyncLog: (log) =>
+        set((state) => ({
+          marketplaceSyncLogs: [log, ...state.marketplaceSyncLogs],
+        })),
+      updateMarketplaceSyncLog: (logId, data) =>
+        set((state) => ({
+          marketplaceSyncLogs: state.marketplaceSyncLogs.map((l) =>
+            l.id === logId ? { ...l, ...data } : l,
+          ),
+        })),
+      addMarketplaceTransaction: (transaction) => {
+        const state = get();
+        const now = new Date().toISOString();
+        const newTransaction: Transaction = {
+          ...transaction,
+          id: uid("tx"),
+          createdAt: now,
+          updatedAt: now,
+        };
+        const journal = generateJournalFromTransaction(
+          newTransaction,
+          state.categories,
+          state.cashAccounts,
+          state.accounts,
+        );
+        const journalEntries = [journal, ...state.journalEntries];
+
+        // Try incremental ledger computation first (faster)
+        const incrementalLedger = appendLedgerEntries(
+          journal,
+          state.ledgerEntries,
+          state.accounts
+        );
+
+        const ledgerEntries = incrementalLedger
+          ? [...state.ledgerEntries, ...incrementalLedger]
+          : refreshLedger(journalEntries, state.accounts);
+
+        set({
+          transactions: [newTransaction, ...state.transactions],
+          journalEntries,
+          journalEntriesLoaded: true,
+          ledgerEntries,
+          auditLogs: [
+            audit("create", "transactions", { transaction: newTransaction, journal }),
+            ...state.auditLogs,
+          ],
+        });
+        return newTransaction;
+      },
+      clearMarketplaceData: (connectionId) =>
+        set((state) => ({
+          marketplaceOrders: state.marketplaceOrders.filter(
+            (o) => o.connectionId !== connectionId,
+          ),
+          marketplaceStatements: state.marketplaceStatements.filter(
+            (s) => s.connectionId !== connectionId,
+          ),
+          marketplaceSyncLogs: state.marketplaceSyncLogs.filter(
+            (l) => l.connectionId !== connectionId,
+          ),
+          auditLogs: [
+            audit("delete", "marketplace_data", { connectionId }),
+            ...state.auditLogs,
+          ],
+        })),
     }),
     {
       name: "kasflow-ledger-store",
       storage: createJSONStorage(() => localStorage),
       version: 1,
+      partialize: (state) => {
+        // Exclude large arrays from localStorage persistence to improve performance
+        // These are always fetched fresh from Supabase anyway
+        const {
+          transactions,
+          journalEntries,
+          ledgerEntries,
+          auditLogs,
+          marketplaceOrders,
+          marketplaceStatements,
+          marketplaceSyncLogs,
+          ...rest
+        } = state;
+        return rest;
+      },
     },
   ),
 );

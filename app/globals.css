@@ -3,17 +3,19 @@
 @tailwind utilities;
 
 :root {
-  --background: 240 10% 98.5%;      /* Clean Off-white */
-  --foreground: 240 10% 3.9%;       /* Modern Charcoal Black */
-  --card: 0 0% 100%;                /* Pure White */
-  --card-foreground: 240 10% 3.9%;
-  --muted: 240 4.8% 95.9%;          /* Soft Gray */
-  --muted-foreground: 240 3.8% 46.1%; /* Dim Gray */
-  --border: 240 5.9% 90%;           /* Subtle Border */
-  --primary: 142.1 76.2% 36.3%;     /* Clean Emerald Green */
-  --primary-foreground: 355.7 100% 97.3%;
-  --destructive: 0 84.2% 60.2%;
+  --background: 220 14% 96%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 46%;
+  --border: 220 13% 91%;
+  --primary: 142 76% 36%;
+  --primary-foreground: 355 100% 97%;
+  --destructive: 0 84% 60%;
   --destructive-foreground: 210 40% 98%;
+  --accent: 262 83% 58%;
+  --accent-foreground: 0 0% 100%;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
@@ -23,17 +25,19 @@
 }
 
 .dark {
-  --background: 240 10% 3.9%;       /* Deep Dark Gray */
-  --foreground: 0 0% 98%;
-  --card: 240 10% 5.9%;             /* Card slightly lighter than bg */
-  --card-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  --border: 240 3.7% 15.9%;
-  --primary: 142.1 70.6% 45.3%;     /* Emerald Green */
-  --primary-foreground: 144.4 96.9% 12.4%;
-  --destructive: 0 62.8% 30.6%;
+  --background: 224 71% 4%;
+  --foreground: 213 31% 91%;
+  --card: 222 47% 7%;
+  --card-foreground: 213 31% 91%;
+  --muted: 223 47% 11%;
+  --muted-foreground: 215 20% 65%;
+  --border: 216 34% 14%;
+  --primary: 142 71% 45%;
+  --primary-foreground: 144 97% 12%;
+  --destructive: 0 63% 31%;
   --destructive-foreground: 210 40% 98%;
+  --accent: 263 70% 58%;
+  --accent-foreground: 0 0% 100%;
 }
 
 * {
@@ -45,9 +49,31 @@ body {
   color: hsl(var(--foreground));
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom Scrollbar Refinement */
+@layer utilities {
+  .card-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.08), 0 2px 6px -2px rgba(0, 0, 0, 0.04);
+  }
+  .dark .card-hover:hover {
+    box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.3), 0 2px 6px -2px rgba(0, 0, 0, 0.15);
+  }
+}
+
+@layer utilities {
+  .btn-press {
+    transition: transform 0.1s ease;
+  }
+  .btn-press:active {
+    transform: scale(0.97);
+  }
+}
+
 .scrollbar-thin::-webkit-scrollbar {
   height: 6px;
   width: 6px;
@@ -66,7 +92,6 @@ body {
   background: hsl(var(--muted-foreground) / 0.3);
 }
 
-/* iOS Glass Utility */
 @layer utilities {
   .ios-glass {
     background: rgba(255, 255, 255, 0.82);
@@ -80,7 +105,6 @@ body {
   }
 }
 
-/* Hide scrollbar utility */
 .scrollbar-none {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -89,7 +113,6 @@ body {
   display: none;
 }
 
-/* Touch target minimum */
 @layer utilities {
   .touch-target {
     min-height: 44px;
@@ -97,7 +120,6 @@ body {
   }
 }
 
-/* Timeline vertical line */
 .timeline-line {
   position: absolute;
   left: 15px;
@@ -110,7 +132,6 @@ body {
   background: hsl(152 40% 22%);
 }
 
-/* Spring animation for page transitions */
 @keyframes spring-in {
   0% { transform: translateY(8px); opacity: 0; }
   60% { transform: translateY(-2px); opacity: 1; }
@@ -122,7 +143,35 @@ body {
   }
 }
 
-/* Mobile input anti-zoom (iOS Safari zooms if font-size < 16px) */
+@layer utilities {
+  .text-balance-lg {
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
+  }
+  @media (min-width: 640px) {
+    .text-balance-lg {
+      font-size: 2rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .text-balance-lg {
+      font-size: 2.25rem;
+    }
+  }
+}
+
+@layer utilities {
+  .featured-card {
+    background: linear-gradient(135deg, hsl(160 84% 20%) 0%, hsl(152 76% 28%) 100%);
+    color: white;
+  }
+  .dark .featured-card {
+    background: linear-gradient(135deg, hsl(160 60% 12%) 0%, hsl(152 50% 18%) 100%);
+  }
+}
+
 @media (max-width: 1023px) {
   .drawer-sheet input,
   .drawer-sheet select,

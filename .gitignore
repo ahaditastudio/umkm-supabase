@@ -3,12 +3,7 @@ node_modules
 out
 dist
 *.tsbuildinfo
-functions/lib
 .env*.local
-.firebase
-firebase-debug.log
-firestore-debug.log
-storage-debug.log
 .DS_Store
 *.log
-kasflow-dev.log
+*.csv

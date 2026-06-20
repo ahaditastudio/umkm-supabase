@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -29,13 +29,17 @@ import {
   TableRow,
 } from "@/components/ui/data-table";
 import {
-  calculateBalanceSheet,
-  calculateCashFlow,
-  calculateProfitLoss,
-  calculateTaxReport,
   getAccount,
 } from "@/lib/accounting";
+import {
+  calculateBalanceSheetMemo,
+  calculateProfitLossMemo,
+  calculateCashFlowMemo,
+  calculateTaxReportMemo,
+} from "@/lib/accounting-memoized";
+import type { NeracaAccountDetail } from "@/lib/types";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/utils";
+import { toast } from "@/lib/toast";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 import {
   Banknote,
@@ -51,6 +55,8 @@ import {
   BookOpen,
   Users2,
   CalendarDays,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -61,6 +67,41 @@ import {
 } from "@/lib/report-export";
 
 type ReportTab = "profit_loss" | "balance_sheet" | "bruto_tax" | "cash_flow";
+
+// Neraca section helper component
+function NeracaSectionBlock({ title, details, subtotal, accent }: {
+  title: string;
+  details: NeracaAccountDetail[];
+  subtotal: number;
+  accent?: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <h5 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 pl-2">{title}</h5>
+      <div className="divide-y divide-zinc-50 dark:divide-zinc-900 pl-4">
+        {details.map((d) => (
+          <div key={d.accountId} className="flex justify-between py-1.5 text-xs">
+            <span className="text-zinc-600 dark:text-zinc-400">
+              {d.accountName}
+            </span>
+            <span className="text-foreground">
+              {formatCurrency(d.balance)}
+            </span>
+          </div>
+        ))}
+        {details.length === 0 && (
+          <div className="flex justify-between py-1.5 text-xs text-muted-foreground">
+            <span>-</span><span>-</span>
+          </div>
+        )}
+      </div>
+      <div className="flex justify-between py-2 text-xs font-semibold border-t border-zinc-200 dark:border-zinc-800 pl-2">
+        <span>Subtotal {title.split(".")[1]?.trim() || title}</span>
+        <span className={accent}>{formatCurrency(subtotal)}</span>
+      </div>
+    </div>
+  );
+}
 
 // Custom Tooltip component for Recharts Area
 function CustomAreaTooltip({ active, payload, label }: any) {
@@ -84,11 +125,24 @@ function CustomAreaTooltip({ active, payload, label }: any) {
 export default function ReportsPage() {
   const accounts = useKasFlowStore((state) => state.accounts);
   const journalEntries = useKasFlowStore((state) => state.journalEntries);
+  const journalEntriesLoaded = useKasFlowStore((state) => state.journalEntriesLoaded);
+  const loadJournalEntries = useKasFlowStore((state) => state.loadJournalEntries);
+  const companyId = useKasFlowStore((state) => state.companyId);
+  const transactions = useKasFlowStore((state) => state.transactions);
+  const categories = useKasFlowStore((state) => state.categories);
   const profile = useKasFlowStore((state) => state.profile);
   const taxSettings = useKasFlowStore((state) => state.taxSettings);
+  const accountingPeriods = useKasFlowStore((state) => state.accountingPeriods);
+
+  // Load journal entries on mount if not already loaded
+  useEffect(() => {
+    if (companyId && !journalEntriesLoaded) {
+      loadJournalEntries();
+    }
+  }, [companyId, journalEntriesLoaded, loadJournalEntries]);
 
   const [activeTab, setActiveTab] = useState<ReportTab>("profit_loss");
-  const [selectedYear, setSelectedYear] = useState<number>(2025);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
   const yearsList = [2024, 2025, 2026, 2027];
 
@@ -98,17 +152,17 @@ export default function ReportsPage() {
 
   // Financial calculations memoized based on selected date boundary
   const profitLoss = useMemo(
-    () => calculateProfitLoss(journalEntries, accounts, fromDate, toDate),
-    [journalEntries, accounts, fromDate, toDate],
+    () => calculateProfitLossMemo(journalEntries, accounts, fromDate, toDate, transactions, taxSettings),
+    [journalEntries, accounts, fromDate, toDate, transactions, taxSettings],
   );
 
   const balanceSheet = useMemo(
-    () => calculateBalanceSheet(journalEntries, accounts), // neraca cumulative all time
-    [journalEntries, accounts],
+    () => calculateBalanceSheetMemo(journalEntries, accounts, taxSettings, accountingPeriods),
+    [journalEntries, accounts, taxSettings, accountingPeriods],
   );
 
   const cashFlow = useMemo(
-    () => calculateCashFlow(journalEntries, accounts),
+    () => calculateCashFlowMemo(journalEntries, accounts),
     [journalEntries, accounts],
   );
 
@@ -134,7 +188,7 @@ export default function ReportsPage() {
 
     return months.map((m) => {
       const periodKey = `${selectedYear}-${m.key}`;
-      const report = calculateTaxReport(journalEntries, accounts, taxSettings, periodKey);
+      const report = calculateTaxReportMemo(journalEntries, accounts, taxSettings, periodKey);
 
       cumulativeTurnover += report.grossRevenue;
       cumulativeTax += report.estimatedTax;
@@ -167,14 +221,14 @@ export default function ReportsPage() {
     } else if (activeTab === "bruto_tax") {
       exportPeredaranBrutoPDF(profile, selectedYear, monthlyTaxReports);
     } else {
-      alert("Grafik arus kas tidak dapat diekspor langsung ke PDF dokumen formal.");
+      toast.warning("Grafik arus kas tidak dapat diekspor langsung ke PDF dokumen formal.");
     }
   };
 
   // Signature Block JSX for on-screen document look
   const renderedSignatureBlock = (
-    <div className="flex justify-end pt-10 text-xs">
-      <div className="w-full sm:w-64 space-y-12 sm:space-y-16 text-right pr-2 sm:pr-6 select-none">
+    <div className="flex justify-center pt-10 text-xs">
+      <div className="w-full sm:w-64 space-y-12 sm:space-y-16 text-center select-none">
         <div className="space-y-1">
           <p className="text-muted-foreground font-medium">Pekanbaru, {new Date().getDate()} April {selectedYear + 1}</p>
           <p className="font-semibold text-foreground">Penanggung Jawab,</p>
@@ -257,8 +311,13 @@ export default function ReportsPage() {
           compact
         />
         <MetricCard
-          title="Total Expenses"
-          value={formatCurrencyCompact(profitLoss.expenses)}
+          title="Total Beban"
+          value={formatCurrencyCompact(
+            profitLoss.cogs +
+            profitLoss.totalOperatingExpenses +
+            profitLoss.nonOperatingExpense +
+            profitLoss.taxExpense,
+          )}
           icon={Banknote}
           tone="red"
           compact
@@ -287,7 +346,7 @@ export default function ReportsPage() {
             "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "profit_loss"
               ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
-              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-white/[0.06] dark:hover:bg-white/[0.10] dark:border dark:border-white/[0.08] lg:bg-transparent lg:dark:bg-transparent lg:dark:border-0"
           )}
         >
           <span className="flex items-center gap-2">
@@ -300,7 +359,7 @@ export default function ReportsPage() {
             "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "balance_sheet"
               ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
-              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-white/[0.06] dark:hover:bg-white/[0.10] dark:border dark:border-white/[0.08] lg:bg-transparent lg:dark:bg-transparent lg:dark:border-0"
           )}
         >
           <span className="flex items-center gap-2">
@@ -313,7 +372,7 @@ export default function ReportsPage() {
             "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "bruto_tax"
               ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
-              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-white/[0.06] dark:hover:bg-white/[0.10] dark:border dark:border-white/[0.08] lg:bg-transparent lg:dark:bg-transparent lg:dark:border-0"
           )}
         >
           <span className="flex items-center gap-2">
@@ -326,7 +385,7 @@ export default function ReportsPage() {
             "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "cash_flow"
               ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
-              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-white/[0.06] dark:hover:bg-white/[0.10] dark:border dark:border-white/[0.08] lg:bg-transparent lg:dark:bg-transparent lg:dark:border-0"
           )}
         >
           <span className="flex items-center gap-2">
@@ -350,48 +409,231 @@ export default function ReportsPage() {
               </div>
             </div>
 
-            {/* Income Report Table */}
+            {/* SAK EMKM Income Statement */}
             <div className="space-y-6 max-w-3xl mx-auto">
-              {/* Revenue */}
+              {/* I. PENDAPATAN USAHA */}
               <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">PENDAPATAN USAHA (REVENUE)</h4>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
+                  I. PENDAPATAN USAHA
+                </h4>
                 <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {Object.entries(profitLoss.revenueByAccount).map(([accountId, value]) => (
-                    <div key={accountId} className="flex justify-between py-2.5 text-xs font-semibold text-foreground">
-                      <span className="pl-4 text-zinc-550">{getAccount(accounts, accountId)?.name}</span>
-                      <span>{formatCurrency(value)}</span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between py-3 text-xs font-bold text-foreground border-t border-zinc-900 bg-zinc-50 dark:bg-zinc-900/30 px-3 rounded-lg mt-1">
+                  {Object.entries(profitLoss.revenueByAccount).map(([accountId, value]) => {
+                    const account = getAccount(accounts, accountId);
+                    const categoryBreakdown = profitLoss.revenueByAccountAndCategory[accountId] || {};
+                    return (
+                      <div key={accountId}>
+                        <div className="flex justify-between py-2.5 text-xs font-semibold text-foreground">
+                          <span className="pl-4 text-zinc-700 dark:text-zinc-300">{account?.name}</span>
+                          <span>{formatCurrency(value)}</span>
+                        </div>
+                        {Object.entries(categoryBreakdown).map(([catId, catValue]) => {
+                          const cat = categories.find((c) => c.id === catId);
+                          return (
+                            <div key={catId} className="flex justify-between py-1.5 text-xs text-zinc-500 pl-8">
+                              <span className="truncate max-w-[200px]">{cat?.name || (catId === "_uncategorized_" ? "Tanpa Kategori" : catId)}</span>
+                              <span>{formatCurrency(catValue)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                  <div className="flex justify-between py-3 text-xs font-bold text-foreground border-t-2 border-zinc-900 dark:border-zinc-100 bg-zinc-50 dark:bg-zinc-900/30 px-3 rounded-lg mt-1">
                     <span>Total Pendapatan Usaha</span>
                     <span>{formatCurrency(profitLoss.revenue)}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Expenses */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">BEBAN & BIAYA OPERASIONAL (EXPENSES)</h4>
-                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {Object.entries(profitLoss.expenseByAccount).map(([accountId, value]) => (
-                    <div key={accountId} className="flex justify-between py-2.5 text-xs font-semibold text-foreground">
-                      <span className="pl-4 text-zinc-550">{getAccount(accounts, accountId)?.name}</span>
-                      <span className="text-rose-500">-{formatCurrency(value)}</span>
+              {/* II. HARGA POKOK PENJUALAN (COGS) */}
+              {profitLoss.cogs > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
+                    II. HARGA POKOK PENJUALAN
+                  </h4>
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {Object.entries(profitLoss.cogsByAccount).map(([accountId, value]) => {
+                      const account = getAccount(accounts, accountId);
+                      return (
+                        <div key={accountId} className="flex justify-between py-2.5 text-xs font-semibold text-foreground">
+                          <span className="pl-4 text-zinc-700 dark:text-zinc-300">{account?.name}</span>
+                          <span className="text-rose-500">-{formatCurrency(value)}</span>
+                        </div>
+                      );
+                    })}
+                    <div className="flex justify-between py-3 text-xs font-bold text-foreground border-t border-zinc-900 dark:border-zinc-100 bg-zinc-50 dark:bg-zinc-900/30 px-3 rounded-lg mt-1">
+                      <span>Total HPP</span>
+                      <span className="text-rose-500">-{formatCurrency(profitLoss.cogs)}</span>
                     </div>
-                  ))}
-                  <div className="flex justify-between py-3 text-xs font-bold text-foreground border-t border-zinc-900 bg-zinc-50 dark:bg-zinc-900/30 px-3 rounded-lg mt-1">
-                    <span>Total Beban Operasional</span>
-                    <span className="text-rose-500">-{formatCurrency(profitLoss.expenses)}</span>
                   </div>
+                </div>
+              )}
+
+              {/* III. LABA KOTOR */}
+              {profitLoss.cogs > 0 && (
+                <div className="flex justify-between items-center py-3 px-4 bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-200 dark:border-emerald-800 rounded-lg">
+                  <span className="text-sm font-bold text-emerald-900 dark:text-emerald-100">III. LABA KOTOR</span>
+                  <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(profitLoss.grossProfit)}</span>
+                </div>
+              )}
+
+              {/* IV. BEBAN OPERASIONAL */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
+                  IV. BEBAN OPERASIONAL
+                </h4>
+
+                {/* Beban Penjualan */}
+                {Object.keys(profitLoss.sellingByAccount).length > 0 && (
+                  <div className="space-y-1">
+                    <h5 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 pl-2">A. Beban Penjualan</h5>
+                    <div className="divide-y divide-zinc-100 dark:divide-zinc-800 pl-4">
+                      {Object.entries(profitLoss.sellingByAccount).map(([accountId, value]) => {
+                        const account = getAccount(accounts, accountId);
+                        return (
+                          <div key={accountId} className="flex justify-between py-2 text-xs">
+                            <span className="text-zinc-600 dark:text-zinc-400">{account?.name}</span>
+                            <span className="text-rose-500">-{formatCurrency(value)}</span>
+                          </div>
+                        );
+                      })}
+                      <div className="flex justify-between py-2 text-xs font-semibold border-t border-zinc-200 dark:border-zinc-800">
+                        <span>Subtotal Beban Penjualan</span>
+                        <span className="text-rose-500">-{formatCurrency(profitLoss.sellingExpenses)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Beban Administrasi & Umum */}
+                {Object.keys(profitLoss.adminByAccount).length > 0 && (
+                  <div className="space-y-1">
+                    <h5 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 pl-2">B. Beban Administrasi & Umum</h5>
+                    <div className="divide-y divide-zinc-100 dark:divide-zinc-800 pl-4">
+                      {Object.entries(profitLoss.adminByAccount).map(([accountId, value]) => {
+                        const account = getAccount(accounts, accountId);
+                        return (
+                          <div key={accountId} className="flex justify-between py-2 text-xs">
+                            <span className="text-zinc-600 dark:text-zinc-400">{account?.name}</span>
+                            <span className="text-rose-500">-{formatCurrency(value)}</span>
+                          </div>
+                        );
+                      })}
+                      <div className="flex justify-between py-2 text-xs font-semibold border-t border-zinc-200 dark:border-zinc-800">
+                        <span>Subtotal Beban Administrasi</span>
+                        <span className="text-rose-500">-{formatCurrency(profitLoss.adminExpenses)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Beban Operasional Lainnya */}
+                {Object.keys(profitLoss.otherOperatingByAccount).length > 0 && (
+                  <div className="space-y-1">
+                    <h5 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 pl-2">C. Beban Operasional Lainnya</h5>
+                    <div className="divide-y divide-zinc-100 dark:divide-zinc-800 pl-4">
+                      {Object.entries(profitLoss.otherOperatingByAccount).map(([accountId, value]) => {
+                        const account = getAccount(accounts, accountId);
+                        return (
+                          <div key={accountId} className="flex justify-between py-2 text-xs">
+                            <span className="text-zinc-600 dark:text-zinc-400">{account?.name}</span>
+                            <span className="text-rose-500">-{formatCurrency(value)}</span>
+                          </div>
+                        );
+                      })}
+                      <div className="flex justify-between py-2 text-xs font-semibold border-t border-zinc-200 dark:border-zinc-800">
+                        <span>Subtotal Beban Operasional Lainnya</span>
+                        <span className="text-rose-500">-{formatCurrency(profitLoss.otherOperatingExpenses)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between py-3 text-xs font-bold text-foreground border-t-2 border-zinc-900 dark:border-zinc-100 bg-zinc-50 dark:bg-zinc-900/30 px-3 rounded-lg">
+                  <span>Total Beban Operasional</span>
+                  <span className="text-rose-500">-{formatCurrency(profitLoss.totalOperatingExpenses)}</span>
                 </div>
               </div>
 
-              {/* Laba Bersih */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-900/30 px-3 sm:px-4 py-3 text-[10px] sm:text-xs font-black text-foreground uppercase tracking-wider">
-                <span>Laba / (Rugi) Bersih (Net Profit)</span>
-                <span className={profitLoss.netProfit >= 0 ? "text-emerald-500 text-sm" : "text-rose-500 text-sm"}>
-                  {formatCurrency(profitLoss.netProfit)}
+              {/* V. LABA OPERASIONAL (EBIT) */}
+              <div className="flex justify-between items-center py-3 px-4 bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-lg">
+                <span className="text-sm font-bold text-blue-900 dark:text-blue-100">V. LABA OPERASIONAL (EBIT)</span>
+                <span className={profitLoss.ebit >= 0 ? "text-sm font-bold text-emerald-600 dark:text-emerald-400" : "text-sm font-bold text-rose-600 dark:text-rose-400"}>
+                  {formatCurrency(profitLoss.ebit)}
                 </span>
+              </div>
+
+              {/* VI. PENDAPATAN & BEBAN DI LUAR USAHA */}
+              {(profitLoss.nonOperatingIncome > 0 || profitLoss.nonOperatingExpense > 0) && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
+                    VI. PENDAPATAN & BEBAN DI LUAR USAHA
+                  </h4>
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {Object.entries(profitLoss.nonOperatingIncomeByAccount).map(([accountId, value]) => {
+                      const account = getAccount(accounts, accountId);
+                      return (
+                        <div key={accountId} className="flex justify-between py-2 text-xs">
+                          <span className="pl-4 text-zinc-600 dark:text-zinc-400">{account?.name}</span>
+                          <span className="text-emerald-500">{formatCurrency(value)}</span>
+                        </div>
+                      );
+                    })}
+                    {Object.entries(profitLoss.nonOperatingExpenseByAccount).map(([accountId, value]) => {
+                      const account = getAccount(accounts, accountId);
+                      return (
+                        <div key={accountId} className="flex justify-between py-2 text-xs">
+                          <span className="pl-4 text-zinc-600 dark:text-zinc-400">{account?.name}</span>
+                          <span className="text-rose-500">-{formatCurrency(value)}</span>
+                        </div>
+                      );
+                    })}
+                    <div className="flex justify-between py-2 text-xs font-semibold border-t border-zinc-200 dark:border-zinc-800">
+                      <span>Total Pendapatan/Beban Lain</span>
+                      <span className={profitLoss.nonOperatingNet >= 0 ? "text-emerald-500" : "text-rose-500"}>
+                        {formatCurrency(profitLoss.nonOperatingNet)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* VII. LABA SEBELUM PAJAK (EBT) */}
+              <div className="flex justify-between items-center py-3 px-4 bg-purple-50 dark:bg-purple-900/20 border-2 border-purple-200 dark:border-purple-800 rounded-lg">
+                <span className="text-sm font-bold text-purple-900 dark:text-purple-100">VII. LABA SEBELUM PAJAK</span>
+                <span className={profitLoss.ebt >= 0 ? "text-sm font-bold text-emerald-600 dark:text-emerald-400" : "text-sm font-bold text-rose-600 dark:text-rose-400"}>
+                  {formatCurrency(profitLoss.ebt)}
+                </span>
+              </div>
+
+              {/* VIII. BEBAN PAJAK */}
+              {profitLoss.taxExpense > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
+                    VIII. BEBAN PAJAK PENGHASILAN
+                  </h4>
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {Object.entries(profitLoss.taxByAccount).map(([accountId, value]) => {
+                      const account = getAccount(accounts, accountId);
+                      return (
+                        <div key={accountId} className="flex justify-between py-2 text-xs">
+                          <span className="pl-4 text-zinc-600 dark:text-zinc-400">{account?.name}</span>
+                          <span className="text-rose-500">-{formatCurrency(value)}</span>
+                        </div>
+                      );
+                    })}
+                    <div className="flex justify-between py-2 text-xs font-semibold border-t border-zinc-200 dark:border-zinc-800">
+                      <span>Total Beban Pajak</span>
+                      <span className="text-rose-500">-{formatCurrency(profitLoss.taxExpense)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* IX. LABA BERSIH SETELAH PAJAK */}
+              <div className="flex justify-between items-center py-4 px-5 bg-gradient-to-r from-emerald-500 to-emerald-600 dark:from-emerald-600 dark:to-emerald-700 rounded-lg shadow-lg">
+                <span className="text-base font-bold text-white">IX. LABA BERSIH SETELAH PAJAK</span>
+                <span className="text-lg font-bold text-white">{formatCurrency(profitLoss.netProfit)}</span>
               </div>
             </div>
 
@@ -418,54 +660,54 @@ export default function ReportsPage() {
               {/* Left Column: Aktiva */}
               <div className="space-y-4">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">AKTIVA / ASET</h4>
-                <div className="space-y-2 border-y py-2 divide-y divide-zinc-50 dark:divide-zinc-900">
-                  <div className="flex justify-between py-1 text-xs font-semibold text-foreground">
-                    <span className="text-zinc-550">Kas & Setara Kas (Kas/Bank)</span>
-                    <span>{formatCurrency(balanceSheet.assets)}</span>
-                  </div>
-                  <div className="flex justify-between py-1 text-xs font-semibold text-foreground">
-                    <span className="text-zinc-550">Piutang & Aset Lancar Lainnya</span>
-                    <span>-</span>
-                  </div>
-                  <div className="flex justify-between py-1 text-xs font-semibold text-foreground">
-                    <span className="text-zinc-550">Aset Tetap (Kendaraan/Gedung/dll)</span>
-                    <span>-</span>
-                  </div>
-                  <div className="flex justify-between py-1 text-xs font-semibold text-foreground">
-                    <span className="text-zinc-550">Akumulasi Penyusutan Aset Tetap</span>
-                    <span>-</span>
-                  </div>
+                <div className="space-y-4 border-y py-3">
+                  <NeracaSectionBlock
+                    title="A. Aset Lancar"
+                    details={balanceSheet.asetLancarDetails}
+                    subtotal={balanceSheet.asetLancar}
+                  />
+                  <NeracaSectionBlock
+                    title="B. Aset Tetap"
+                    details={[
+                      ...balanceSheet.asetTetapDetails,
+                      ...balanceSheet.akumulasiPenyusutanDetails.map((d) => ({
+                        ...d,
+                        balance: -d.balance,
+                        accountName: `${d.accountName} (-)`,
+                      })),
+                    ]}
+                    subtotal={balanceSheet.asetTetap}
+                  />
                 </div>
                 <div className="flex justify-between py-2.5 text-xs font-bold text-foreground bg-zinc-50 dark:bg-zinc-900/30 px-3 rounded-lg border border-zinc-200/50">
                   <span>TOTAL AKTIVA</span>
-                  <span>{formatCurrency(balanceSheet.assets)}</span>
+                  <span>{formatCurrency(balanceSheet.totalAset)}</span>
                 </div>
               </div>
 
               {/* Right Column: Pasiva */}
               <div className="space-y-4">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">PASIVA (KEWAJIBAN & EKUITAS)</h4>
-                <div className="space-y-2 border-y py-2 divide-y divide-zinc-50 dark:divide-zinc-900">
-                  <div className="flex justify-between py-1 text-xs font-semibold text-foreground">
-                    <span className="text-zinc-550">Kewajiban / Hutang Lancar</span>
-                    <span>{formatCurrency(balanceSheet.liabilities)}</span>
-                  </div>
-                  <div className="flex justify-between py-1 text-xs font-semibold text-foreground">
-                    <span className="text-zinc-550">Hutang Jangka Panjang</span>
-                    <span>-</span>
-                  </div>
-                  <div className="flex justify-between py-1 text-xs font-semibold text-foreground">
-                    <span className="text-zinc-550">Modal Pemilik (Base Equity)</span>
-                    <span>{formatCurrency(balanceSheet.equity - balanceSheet.retainedEarnings)}</span>
-                  </div>
-                  <div className="flex justify-between py-1 text-xs font-semibold text-foreground">
-                    <span className="text-zinc-550">Laba Ditahan (Retained Earnings)</span>
-                    <span>{formatCurrency(balanceSheet.retainedEarnings)}</span>
-                  </div>
+                <div className="space-y-4 border-y py-3">
+                  <NeracaSectionBlock
+                    title="C. Kewajiban Lancar"
+                    details={balanceSheet.kewajibanLancarDetails}
+                    subtotal={balanceSheet.kewajibanLancar}
+                  />
+                  <NeracaSectionBlock
+                    title="D. Kewajiban Jangka Panjang"
+                    details={balanceSheet.kewajibanJangkaPanjangDetails}
+                    subtotal={balanceSheet.kewajibanJangkaPanjang}
+                  />
+                  <NeracaSectionBlock
+                    title="E. Ekuitas"
+                    details={balanceSheet.ekuitasDetails}
+                    subtotal={balanceSheet.totalEkuitas}
+                  />
                 </div>
                 <div className="flex justify-between py-2.5 text-xs font-bold text-foreground bg-zinc-50 dark:bg-zinc-900/30 px-3 rounded-lg border border-zinc-200/50">
                   <span>TOTAL PASIVA</span>
-                  <span>{formatCurrency(balanceSheet.liabilities + balanceSheet.equity)}</span>
+                  <span>{formatCurrency(balanceSheet.totalKewajiban + balanceSheet.totalEkuitas)}</span>
                 </div>
               </div>
             </div>

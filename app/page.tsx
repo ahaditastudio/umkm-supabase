@@ -11,7 +11,7 @@ import {
   Activity,
   ArrowUpRight,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -35,10 +35,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  calculateCashFlow,
-  calculateReportSummary,
   topAccountsByType,
 } from "@/lib/accounting";
+import {
+  calculateCashFlowMemo,
+  calculateReportSummaryMemo,
+} from "@/lib/accounting-memoized";
 import { formatCurrency, formatCurrencyCompact, formatCountCompact } from "@/lib/utils";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 
@@ -69,13 +71,22 @@ export default function DashboardPage() {
   const accounts = useKasFlowStore((state) => state.accounts);
   const cashAccounts = useKasFlowStore((state) => state.cashAccounts);
   const journalEntries = useKasFlowStore((state) => state.journalEntries);
+  const journalEntriesLoaded = useKasFlowStore((state) => state.journalEntriesLoaded);
+  const loadJournalEntries = useKasFlowStore((state) => state.loadJournalEntries);
+  const companyId = useKasFlowStore((state) => state.companyId);
   const taxSettings = useKasFlowStore((state) => state.taxSettings);
   const transactions = useKasFlowStore((state) => state.transactions);
   const profile = useKasFlowStore((state) => state.profile);
 
+  useEffect(() => {
+    if (companyId && !journalEntriesLoaded) {
+      loadJournalEntries();
+    }
+  }, [companyId, journalEntriesLoaded, loadJournalEntries]);
+
   const summary = useMemo(
     () =>
-      calculateReportSummary(
+      calculateReportSummaryMemo(
         journalEntries,
         accounts,
         cashAccounts,
@@ -84,7 +95,7 @@ export default function DashboardPage() {
     [journalEntries, accounts, cashAccounts, taxSettings],
   );
   const cashFlow = useMemo(
-    () => calculateCashFlow(journalEntries, accounts),
+    () => calculateCashFlowMemo(journalEntries, accounts),
     [journalEntries, accounts],
   );
   const topRevenue = useMemo(
@@ -96,9 +107,20 @@ export default function DashboardPage() {
     [journalEntries, accounts],
   );
 
-  // Compute maximum values for percentage bars in listing
-  const maxRevenue = useMemo(() => Math.max(...topRevenue.map(item => item.value), 1), [topRevenue]);
-  const maxExpense = useMemo(() => Math.max(...topExpenses.map(item => item.value), 1), [topExpenses]);
+  // Show loading state while journal entries are being loaded
+  if (!journalEntriesLoaded) {
+    return (
+      <div className="space-y-5 sm:space-y-6 lg:space-y-8 animate-in fade-in duration-500">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
+            <p className="mt-4 text-sm text-muted-foreground">Memuat data keuangan...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
 
   return (
     <div className="space-y-5 sm:space-y-6 lg:space-y-8 animate-in fade-in duration-500">
@@ -276,36 +298,49 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Top Ledger Performers (With progress bars) */}
+      {/* Top Ledger Performers */}
       <div className="grid gap-6 lg:grid-cols-2">
+        {/* ─── Pendapatan: Ranked List ─── */}
         <Card>
-          <CardHeader className="border-b pb-3 mb-3 lg:pb-4 lg:mb-4">
+          <CardHeader className="border-b pb-3 mb-4 lg:pb-4 lg:mb-5">
             <CardTitle className="text-sm sm:text-base">Sumber Pendapatan Utama</CardTitle>
             <CardDescription>Akun pendapatan paling produktif di buku besar.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent>
             {topRevenue.length ? (
-              topRevenue.map((item) => {
-                const percent = (item.value / maxRevenue) * 100;
-                return (
-                  <div key={item.account?.id} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-xs font-semibold text-foreground">
-                      <span className="flex items-center gap-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        {item.account?.name}
-                      </span>
-                      <span>{formatCurrency(item.value)}</span>
-                    </div>
-                    {/* Visual Progress Bar */}
-                    <div className="h-1.5 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-emerald-500 transition-all duration-500"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
+              <>
+                <div className="space-y-3">
+                  {topRevenue.map((item, idx) => {
+                    const totalRev = topRevenue.reduce((s, i) => s + i.value, 0);
+                    const pct = totalRev > 0 ? (item.value / totalRev) * 100 : 0;
+                    return (
+                      <div key={item.account?.id} className="flex items-center gap-3">
+                        {/* Rank Number */}
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/8 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                          {String(idx + 1).padStart(2, "0")}
+                        </span>
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-semibold text-foreground truncate">{item.account?.name}</p>
+                          <div className="mt-1 h-[2px] w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                            <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                        {/* Value + Percentage */}
+                        <div className="text-right shrink-0">
+                          <p className="text-[13px] font-bold text-foreground">{formatCurrency(item.value)}</p>
+                          <p className="text-[10px] font-semibold text-emerald-500">{pct.toFixed(1)}%</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Total */}
+                <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Total Pendapatan</span>
+                  <span className="text-sm font-bold text-foreground">{formatCurrency(topRevenue.reduce((s, i) => s + i.value, 0))}</span>
+                </div>
+              </>
             ) : (
               <div className="py-8 text-center text-xs text-muted-foreground">
                 Belum ada transaksi pendapatan tercatat.
@@ -314,35 +349,64 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {/* ─── Pengeluaran: Stacked Bar + Legend ─── */}
         <Card>
-          <CardHeader className="border-b pb-3 mb-3 lg:pb-4 lg:mb-4">
+          <CardHeader className="border-b pb-3 mb-4 lg:pb-4 lg:mb-5">
             <CardTitle className="text-sm sm:text-base">Pos Pengeluaran Terbesar</CardTitle>
-            <CardDescription>Akun alokasi pengeluaran dana terbesar.</CardDescription>
+            <CardDescription>Komposisi alokasi pengeluaran dana bisnis.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {topExpenses.length ? (
-              topExpenses.map((item) => {
-                const percent = (item.value / maxExpense) * 100;
-                return (
-                  <div key={item.account?.id} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-xs font-semibold text-foreground">
-                      <span className="flex items-center gap-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                        {item.account?.name}
-                      </span>
-                      <span>{formatCurrency(item.value)}</span>
-                    </div>
-                    {/* Visual Progress Bar */}
-                    <div className="h-1.5 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-rose-500/80 transition-all duration-500"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
+          <CardContent>
+            {topExpenses.length ? (() => {
+              const totalExp = topExpenses.reduce((s, i) => s + i.value, 0);
+              const colors = [
+                "bg-rose-500", "bg-amber-500", "bg-blue-500", "bg-purple-500",
+                "bg-teal-500", "bg-pink-500", "bg-orange-500", "bg-cyan-500",
+                "bg-lime-500", "bg-indigo-500",
+              ];
+              const dotColors = [
+                "bg-rose-500", "bg-amber-500", "bg-blue-500", "bg-purple-500",
+                "bg-teal-500", "bg-pink-500", "bg-orange-500", "bg-cyan-500",
+                "bg-lime-500", "bg-indigo-500",
+              ];
+              return (
+                <>
+                  {/* Stacked Bar */}
+                  <div className="flex h-3 w-full rounded-full overflow-hidden mb-5">
+                    {topExpenses.map((item, idx) => {
+                      const pct = totalExp > 0 ? (item.value / totalExp) * 100 : 0;
+                      return (
+                        <div
+                          key={item.account?.id}
+                          className={`${colors[idx % colors.length]} transition-all duration-500`}
+                          style={{ width: `${pct}%` }}
+                          title={`${item.account?.name}: ${pct.toFixed(1)}%`}
+                        />
+                      );
+                    })}
                   </div>
-                );
-              })
-            ) : (
+                  {/* Legend Grid */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    {topExpenses.map((item, idx) => {
+                      const pct = totalExp > 0 ? (item.value / totalExp) * 100 : 0;
+                      return (
+                        <div key={item.account?.id} className="flex items-center gap-2 min-w-0">
+                          <span className={`h-2 w-2 rounded-full shrink-0 ${dotColors[idx % dotColors.length]}`} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-semibold text-foreground truncate">{item.account?.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{formatCurrencyCompact(item.value)} <span className="text-muted-foreground/60">({pct.toFixed(0)}%)</span></p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Total */}
+                  <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Total Pengeluaran</span>
+                    <span className="text-sm font-bold text-foreground">{formatCurrency(totalExp)}</span>
+                  </div>
+                </>
+              );
+            })() : (
               <div className="py-8 text-center text-xs text-muted-foreground">
                 Belum ada transaksi pengeluaran tercatat.
               </div>

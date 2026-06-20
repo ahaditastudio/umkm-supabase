@@ -31,15 +31,19 @@ function addPdfSignature(doc: jsPDF, profile: BusinessProfile, startY: number) {
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
+  doc.setTextColor(113, 113, 122); // zinc-500
 
-  doc.text(dateStr, 140, signatureY);
-  doc.text("Penanggung Jawab,", 140, signatureY + 6);
+  doc.text(dateStr, 105, signatureY, { align: "center" });
+  doc.text("Penanggung Jawab,", 105, signatureY + 6, { align: "center" });
 
   doc.setFont("helvetica", "bold");
-  doc.text(profile.ownerName || "NOVIA SINATA", 140, signatureY + 25);
+  doc.setTextColor(24, 24, 27); // zinc-900
+  doc.text(profile.ownerName || "NOVIA SINATA", 105, signatureY + 25, { align: "center" });
 
   doc.setFont("helvetica", "normal");
-  doc.text(profile.businessType === "freelancer" ? "Freelancer" : "Direktur / Pemilik", 140, signatureY + 29);
+  doc.setFontSize(8);
+  doc.setTextColor(113, 113, 122); // zinc-500
+  doc.text(profile.businessType === "freelancer" ? "Freelancer" : "Direktur / Pemilik", 105, signatureY + 29, { align: "center" });
 }
 
 // Generates header metadata for PDF
@@ -155,28 +159,125 @@ export function exportProfitLossPDF(
   addPdfHeader(doc, "Laporan Laba Rugi (Income Statement)", profile, year);
 
   const tableBody: any[] = [];
+  const grayBg = [244, 244, 245] as [number, number, number];
 
-  tableBody.push([{ content: "PENDAPATAN USAHA (REVENUE)", colSpan: 3, styles: { fontStyle: "bold" as const, fillColor: [244, 244, 245] as [number, number, number] } }]);
+  // I. Pendapatan Usaha
+  tableBody.push([{ content: "I. PENDAPATAN USAHA", colSpan: 3, styles: { fontStyle: "bold" as const, fillColor: grayBg } }]);
   Object.entries(profitLoss.revenueByAccount).forEach(([accountId, val]) => {
     const acc = getAccount(accounts, accountId);
     tableBody.push(["", `${acc?.code || ""} - ${acc?.name || ""}`, rawFormatCurrency(val)]);
   });
   tableBody.push(["", "Total Pendapatan Usaha", { content: rawFormatCurrency(profitLoss.revenue), styles: { fontStyle: "bold" as const } }]);
 
-  tableBody.push([{ content: "BEBAN & BIAYA OPERASIONAL (EXPENSES)", colSpan: 3, styles: { fontStyle: "bold" as const, fillColor: [244, 244, 245] as [number, number, number] } }]);
-  Object.entries(profitLoss.expenseByAccount).forEach(([accountId, val]) => {
-    const acc = getAccount(accounts, accountId);
-    tableBody.push(["", `${acc?.code || ""} - ${acc?.name || ""}`, `-${rawFormatCurrency(val)}`]);
-  });
-  tableBody.push(["", "Total Beban & Biaya Operasional", { content: `-${rawFormatCurrency(profitLoss.expenses)}`, styles: { fontStyle: "bold" as const, textColor: [239, 68, 68] as [number, number, number] } }]);
+  // II. HPP
+  if (profitLoss.cogs > 0) {
+    tableBody.push([{ content: "II. HARGA POKOK PENJUALAN (HPP)", colSpan: 3, styles: { fontStyle: "bold" as const, fillColor: grayBg } }]);
+    Object.entries(profitLoss.cogsByAccount).forEach(([accountId, val]) => {
+      const acc = getAccount(accounts, accountId);
+      tableBody.push(["", `${acc?.code || ""} - ${acc?.name || ""}`, `-${rawFormatCurrency(val)}`]);
+    });
+    tableBody.push(["", "Total HPP", { content: `-${rawFormatCurrency(profitLoss.cogs)}`, styles: { fontStyle: "bold" as const, textColor: [239, 68, 68] as [number, number, number] } }]);
+  }
 
+  // III. Laba Kotor
+  if (profitLoss.cogs > 0) {
+    tableBody.push([{
+      content: "III. LABA KOTOR",
+      colSpan: 2,
+      styles: { fontStyle: "bold" as const, fillColor: [228, 228, 231] as [number, number, number] }
+    }, {
+      content: rawFormatCurrency(profitLoss.grossProfit),
+      styles: { fontStyle: "bold" as const, fillColor: [228, 228, 231] as [number, number, number], halign: "right" as const }
+    }]);
+  }
+
+  // IV. Beban Operasional
+  tableBody.push([{ content: "IV. BEBAN OPERASIONAL", colSpan: 3, styles: { fontStyle: "bold" as const, fillColor: grayBg } }]);
+
+  // A. Beban Penjualan
+  if (Object.keys(profitLoss.sellingByAccount).length > 0) {
+    tableBody.push([{ content: "A. Beban Penjualan", colSpan: 3, styles: { fontStyle: "italic" as const } }]);
+    Object.entries(profitLoss.sellingByAccount).forEach(([accountId, val]) => {
+      const acc = getAccount(accounts, accountId);
+      tableBody.push(["", `  ${acc?.code || ""} - ${acc?.name || ""}`, `-${rawFormatCurrency(val)}`]);
+    });
+    tableBody.push(["", "Subtotal Beban Penjualan", { content: `-${rawFormatCurrency(profitLoss.sellingExpenses)}`, styles: { textColor: [239, 68, 68] as [number, number, number] } }]);
+  }
+
+  // B. Beban Administrasi & Umum
+  if (Object.keys(profitLoss.adminByAccount).length > 0) {
+    tableBody.push([{ content: "B. Beban Administrasi & Umum", colSpan: 3, styles: { fontStyle: "italic" as const } }]);
+    Object.entries(profitLoss.adminByAccount).forEach(([accountId, val]) => {
+      const acc = getAccount(accounts, accountId);
+      tableBody.push(["", `  ${acc?.code || ""} - ${acc?.name || ""}`, `-${rawFormatCurrency(val)}`]);
+    });
+    tableBody.push(["", "Subtotal Beban Administrasi", { content: `-${rawFormatCurrency(profitLoss.adminExpenses)}`, styles: { textColor: [239, 68, 68] as [number, number, number] } }]);
+  }
+
+  // C. Beban Operasional Lainnya
+  if (Object.keys(profitLoss.otherOperatingByAccount).length > 0) {
+    tableBody.push([{ content: "C. Beban Operasional Lainnya", colSpan: 3, styles: { fontStyle: "italic" as const } }]);
+    Object.entries(profitLoss.otherOperatingByAccount).forEach(([accountId, val]) => {
+      const acc = getAccount(accounts, accountId);
+      tableBody.push(["", `  ${acc?.code || ""} - ${acc?.name || ""}`, `-${rawFormatCurrency(val)}`]);
+    });
+    tableBody.push(["", "Subtotal Beban Operasional Lainnya", { content: `-${rawFormatCurrency(profitLoss.otherOperatingExpenses)}`, styles: { textColor: [239, 68, 68] as [number, number, number] } }]);
+  }
+
+  tableBody.push(["", "Total Beban Operasional", { content: `-${rawFormatCurrency(profitLoss.totalOperatingExpenses)}`, styles: { fontStyle: "bold" as const, textColor: [239, 68, 68] as [number, number, number] } }]);
+
+  // V. Laba Operasional (EBIT)
   tableBody.push([{
-    content: "LABA / (RUGI) BERSIH TAHUNAN (NET PROFIT)",
+    content: "V. LABA OPERASIONAL (EBIT)",
     colSpan: 2,
     styles: { fontStyle: "bold" as const, fillColor: [228, 228, 231] as [number, number, number] }
   }, {
-    content: rawFormatCurrency(profitLoss.netProfit),
+    content: rawFormatCurrency(profitLoss.ebit),
     styles: { fontStyle: "bold" as const, fillColor: [228, 228, 231] as [number, number, number], halign: "right" as const }
+  }]);
+
+  // VI. Pendapatan/Beban Lain
+  if (profitLoss.nonOperatingIncome > 0 || profitLoss.nonOperatingExpense > 0) {
+    tableBody.push([{ content: "VI. PENDAPATAN & BEBAN DI LUAR USAHA", colSpan: 3, styles: { fontStyle: "bold" as const, fillColor: grayBg } }]);
+    Object.entries(profitLoss.nonOperatingIncomeByAccount).forEach(([accountId, val]) => {
+      const acc = getAccount(accounts, accountId);
+      tableBody.push(["", `${acc?.code || ""} - ${acc?.name || ""}`, rawFormatCurrency(val)]);
+    });
+    Object.entries(profitLoss.nonOperatingExpenseByAccount).forEach(([accountId, val]) => {
+      const acc = getAccount(accounts, accountId);
+      tableBody.push(["", `${acc?.code || ""} - ${acc?.name || ""}`, `-${rawFormatCurrency(val)}`]);
+    });
+    tableBody.push(["", "Total Pendapatan/Beban Lain", { content: rawFormatCurrency(profitLoss.nonOperatingNet), styles: { fontStyle: "bold" as const } }]);
+  }
+
+  // VII. Laba Sebelum Pajak
+  tableBody.push([{
+    content: "VII. LABA SEBELUM PAJAK",
+    colSpan: 2,
+    styles: { fontStyle: "bold" as const, fillColor: [228, 228, 231] as [number, number, number] }
+  }, {
+    content: rawFormatCurrency(profitLoss.ebt),
+    styles: { fontStyle: "bold" as const, fillColor: [228, 228, 231] as [number, number, number], halign: "right" as const }
+  }]);
+
+  // VIII. Pajak
+  if (profitLoss.taxExpense > 0) {
+    tableBody.push([{ content: "VIII. BEBAN PAJAK PENGHASILAN", colSpan: 3, styles: { fontStyle: "bold" as const, fillColor: grayBg } }]);
+    Object.entries(profitLoss.taxByAccount).forEach(([accountId, val]) => {
+      const acc = getAccount(accounts, accountId);
+      tableBody.push(["", `${acc?.code || ""} - ${acc?.name || ""}`, `-${rawFormatCurrency(val)}`]);
+    });
+    tableBody.push(["", "Total Beban Pajak", { content: `-${rawFormatCurrency(profitLoss.taxExpense)}`, styles: { fontStyle: "bold" as const, textColor: [239, 68, 68] as [number, number, number] } }]);
+  }
+
+  // IX. Laba Bersih
+  tableBody.push([{
+    content: "IX. LABA BERSIH SETELAH PAJAK",
+    colSpan: 2,
+    styles: { fontStyle: "bold" as const, fillColor: [200, 250, 220] as [number, number, number] }
+  }, {
+    content: rawFormatCurrency(profitLoss.netProfit),
+    styles: { fontStyle: "bold" as const, fillColor: [200, 250, 220] as [number, number, number], halign: "right" as const }
   }]);
 
   autoTable(doc, {
@@ -210,20 +311,72 @@ export function exportBalanceSheetPDF(
   const doc = new jsPDF("p", "mm", "a4");
   addPdfHeader(doc, "Neraca Keuangan (Balance Sheet)", profile, year);
 
-  const tableBody = [
-    [{ content: "AKTIVA / ASET", colSpan: 2, styles: { fontStyle: "bold" as const, fillColor: [244, 244, 245] as [number, number, number] } },
-     { content: "PASIVA (KEWAJIBAN & EKUITAS)", colSpan: 2, styles: { fontStyle: "bold" as const, fillColor: [244, 244, 245] as [number, number, number] } }],
+  const grayBg = [244, 244, 245] as [number, number, number];
 
-    ["Kas Utama & Bank", rawFormatCurrency(balanceSheet.assets), "Kewajiban Jangka Pendek", rawFormatCurrency(balanceSheet.liabilities)],
-    ["Piutang & Aset Lancar Lain", "-", "Hutang Jangka Panjang", "-"],
-    ["Aset Tetap (Kendaraan, Inventaris, Gedung)", "-", "Modal Disetor (Equity Base)", rawFormatCurrency(balanceSheet.equity - balanceSheet.retainedEarnings)],
-    ["Akumulasi Penyusutan Aset", "-", "Laba Ditahan / Retained Earnings", rawFormatCurrency(balanceSheet.retainedEarnings)],
+  // Build left side (AKTIVA) rows
+  const aktivaRows: Array<[string, string]> = [];
+  aktivaRows.push(["A. Aset Lancar", ""]);
+  for (const d of balanceSheet.asetLancarDetails) {
+    aktivaRows.push([`   ${d.accountName}`, rawFormatCurrency(d.balance)]);
+  }
+  aktivaRows.push(["Subtotal Aset Lancar", rawFormatCurrency(balanceSheet.asetLancar)]);
+  aktivaRows.push(["", ""]);
+  aktivaRows.push(["B. Aset Tetap", ""]);
+  for (const d of balanceSheet.asetTetapDetails) {
+    aktivaRows.push([`   ${d.accountName}`, rawFormatCurrency(d.balance)]);
+  }
+  for (const d of balanceSheet.akumulasiPenyusutanDetails) {
+    aktivaRows.push([`   ${d.accountName} (-)`, rawFormatCurrency(-d.balance)]);
+  }
+  aktivaRows.push(["Subtotal Aset Tetap", rawFormatCurrency(balanceSheet.asetTetap)]);
 
-    [{ content: "TOTAL AKTIVA", styles: { fontStyle: "bold" as const } },
-     { content: rawFormatCurrency(balanceSheet.assets), styles: { fontStyle: "bold" as const } },
-     { content: "TOTAL PASIVA", styles: { fontStyle: "bold" as const } },
-     { content: rawFormatCurrency(balanceSheet.liabilities + balanceSheet.equity), styles: { fontStyle: "bold" as const } }]
+  // Build right side (PASIVA) rows
+  const pasivaRows: Array<[string, string]> = [];
+  pasivaRows.push(["C. Kewajiban Lancar", ""]);
+  for (const d of balanceSheet.kewajibanLancarDetails) {
+    pasivaRows.push([`   ${d.accountName}`, rawFormatCurrency(d.balance)]);
+  }
+  pasivaRows.push(["Subtotal Kewajiban Lancar", rawFormatCurrency(balanceSheet.kewajibanLancar)]);
+  pasivaRows.push(["", ""]);
+  pasivaRows.push(["D. Kewajiban Jangka Panjang", ""]);
+  for (const d of balanceSheet.kewajibanJangkaPanjangDetails) {
+    pasivaRows.push([`   ${d.accountName}`, rawFormatCurrency(d.balance)]);
+  }
+  pasivaRows.push(["Subtotal Kewajiban Jangka Panjang", rawFormatCurrency(balanceSheet.kewajibanJangkaPanjang)]);
+  pasivaRows.push(["", ""]);
+  pasivaRows.push(["E. Ekuitas", ""]);
+  for (const d of balanceSheet.ekuitasDetails) {
+    pasivaRows.push([`   ${d.accountName}`, rawFormatCurrency(d.balance)]);
+  }
+  pasivaRows.push(["Subtotal Ekuitas", rawFormatCurrency(balanceSheet.totalEkuitas)]);
+
+  // Merge into side-by-side table
+  const maxRows = Math.max(aktivaRows.length, pasivaRows.length);
+  const tableBody: any[][] = [
+    [{ content: "AKTIVA / ASET", colSpan: 2, styles: { fontStyle: "bold" as const, fillColor: grayBg } },
+     { content: "PASIVA (KEWAJIBAN & EKUITAS)", colSpan: 2, styles: { fontStyle: "bold" as const, fillColor: grayBg } }],
   ];
+
+  for (let i = 0; i < maxRows; i++) {
+    const [aLabel, aVal] = aktivaRows[i] || ["", ""];
+    const [pLabel, pVal] = pasivaRows[i] || ["", ""];
+    const isSubtotal = aLabel.startsWith("Subtotal") || pLabel.startsWith("Subtotal");
+    const row: any[] = [
+      isSubtotal ? { content: aLabel, styles: { fontStyle: "bold" as const } } : aLabel,
+      isSubtotal ? { content: aVal, styles: { fontStyle: "bold" as const } } : aVal,
+      isSubtotal ? { content: pLabel, styles: { fontStyle: "bold" as const } } : pLabel,
+      isSubtotal ? { content: pVal, styles: { fontStyle: "bold" as const } } : pVal,
+    ];
+    tableBody.push(row);
+  }
+
+  // Total row
+  tableBody.push([
+    { content: "TOTAL AKTIVA", styles: { fontStyle: "bold" as const } },
+    { content: rawFormatCurrency(balanceSheet.totalAset), styles: { fontStyle: "bold" as const } },
+    { content: "TOTAL PASIVA", styles: { fontStyle: "bold" as const } },
+    { content: rawFormatCurrency(balanceSheet.totalKewajiban + balanceSheet.totalEkuitas), styles: { fontStyle: "bold" as const } },
+  ]);
 
   autoTable(doc, {
     body: tableBody,
@@ -251,14 +404,17 @@ export function exportBalanceSheetPDF(
 
 // ── EXCEL BUNDLE EXPORT CHANNELS USING EXCELJS ──
 
-// Helper style variables for ExcelJS
+// Helper style variables for ExcelJS (match Tailwind palette)
 const colors = {
-  headerBg: "18181B",    // zinc-900 / dark charcoal
-  sectionBg: "E4E4E7",   // zinc-200 / neutral section
-  totalBg: "F4F4F5",     // zinc-100 / soft total row
+  headerBg: "18181B",    // zinc-900
+  sectionBg: "E4E4E7",   // zinc-200
+  totalBg: "F4F4F5",     // zinc-100
   white: "FFFFFF",
-  mutedText: "71717A",
-  redText: "EF4444",
+  mutedText: "71717A",   // zinc-500
+  redText: "EF4444",     // red-500
+  emeraldBg: "D1FAE5",   // emerald-100
+  emeraldText: "059669", // emerald-600
+  border: "D4D4D8",      // zinc-300
 };
 
 const borderStyles = {
@@ -584,7 +740,13 @@ export async function exportAllReportsToExcel(
   currRow++;
 
   let expIndex = 1;
-  Object.entries(profitLoss.expenseByAccount).forEach(([accountId, val]) => {
+  // Merge semua expense buckets (selling + admin + other operating)
+  const allOperatingExpenses: Record<string, number> = {
+    ...profitLoss.sellingByAccount,
+    ...profitLoss.adminByAccount,
+    ...profitLoss.otherOperatingByAccount,
+  };
+  Object.entries(allOperatingExpenses).forEach(([accountId, val]) => {
     const acc = getAccount(accounts, accountId);
     const r = sPL.getRow(currRow);
     r.height = 18;
@@ -605,7 +767,7 @@ export async function exportAllReportsToExcel(
   // Total Expenses
   sPL.getCell(`A${currRow}`).value = "TOTAL BEBAN OPERASIONAL";
   sPL.getCell(`A${currRow}`).font = { name: "Arial", size: 9, bold: true };
-  sPL.getCell(`D${currRow}`).value = profitLoss.expenses;
+  sPL.getCell(`D${currRow}`).value = profitLoss.totalOperatingExpenses;
   sPL.getCell(`D${currRow}`).font = { name: "Arial", size: 9, bold: true, color: { argb: colors.redText } };
   sPL.getCell(`D${currRow}`).numFmt = '#,##0';
   sPL.getCell(`D${currRow}`).alignment = { horizontal: "right" };
@@ -660,136 +822,109 @@ export async function exportAllReportsToExcel(
     cell.border = { top: borderStyles.thin, bottom: borderStyles.thin, left: borderStyles.thin, right: borderStyles.thin };
   }
 
-  // Row 13: Section title
-  sNeraca.getCell("A13").value = "I.   ASET LANCAR";
-  sNeraca.getCell("A13").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("E13").value = "I.   KEWAJIBAN JANGKA PENDEK";
-  sNeraca.getCell("E13").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getRow(13).height = 18;
+  // Dynamic Neraca rows
+  let nRow = 13;
 
-  // Row 14: Details
-  sNeraca.getCell("B14").value = "1.1";
-  sNeraca.getCell("C14").value = "Kas Utama";
-  sNeraca.getCell("D14").value = balanceSheet.assets * 0.3; // Kas
-  sNeraca.getCell("E14").value = "Utang Dagang kepada Supplier";
-  sNeraca.getCell("F14").value = balanceSheet.liabilities;
-  sNeraca.getRow(14).height = 18;
+  // Helper: write a section row
+  function writeNeracaRow(row: number, aCode: string, aName: string, aVal: number, pName: string, pVal: number, bold = false) {
+    sNeraca.getCell(`B${row}`).value = aCode;
+    sNeraca.getCell(`C${row}`).value = aName;
+    sNeraca.getCell(`D${row}`).value = aVal;
+    sNeraca.getCell(`E${row}`).value = pName;
+    sNeraca.getCell(`F${row}`).value = pVal;
+    if (bold) {
+      sNeraca.getCell(`A${row}`).font = { name: "Arial", size: 9, bold: true };
+      sNeraca.getCell(`D${row}`).font = { name: "Arial", size: 9, bold: true };
+      sNeraca.getCell(`D${row}`).border = { top: borderStyles.thin, bottom: borderStyles.thin };
+      sNeraca.getCell(`E${row}`).font = { name: "Arial", size: 9, bold: true };
+      sNeraca.getCell(`F${row}`).font = { name: "Arial", size: 9, bold: true };
+      sNeraca.getCell(`F${row}`).border = { top: borderStyles.thin, bottom: borderStyles.thin };
+    }
+    sNeraca.getRow(row).height = 18;
+  }
 
-  // Row 15: Details
-  sNeraca.getCell("B15").value = "1.2";
-  sNeraca.getCell("C15").value = "Bank — Rekening Giro";
-  sNeraca.getCell("D15").value = balanceSheet.assets * 0.7; // Bank
-  sNeraca.getCell("E15").value = "Utang Gaji Karyawan";
-  sNeraca.getCell("F15").value = 0;
-  sNeraca.getRow(15).height = 18;
+  // I. ASET LANCAR
+  sNeraca.getCell(`A${nRow}`).value = "I.   ASET LANCAR";
+  sNeraca.getCell(`A${nRow}`).font = { name: "Arial", size: 9, bold: true };
+  sNeraca.getCell(`E${nRow}`).value = "I.   KEWAJIBAN LANCAR";
+  sNeraca.getCell(`E${nRow}`).font = { name: "Arial", size: 9, bold: true };
+  nRow++;
 
-  // Row 16: Details
-  sNeraca.getCell("B16").value = "1.3";
-  sNeraca.getCell("C16").value = "Piutang Usaha";
-  sNeraca.getCell("D16").value = 0;
-  sNeraca.getCell("E16").value = "Utang PPh Final 0,5% (Desember)";
-  sNeraca.getCell("F16").value = 0;
-  sNeraca.getRow(16).height = 18;
+  for (const d of balanceSheet.asetLancarDetails) {
+    writeNeracaRow(nRow, d.accountCode, d.accountName, d.balance, "", 0);
+    nRow++;
+  }
+  // Fill kewajiban lancar on the right side
+  const kewajibanLancarStart = 14;
+  let kRow = kewajibanLancarStart;
+  for (const d of balanceSheet.kewajibanLancarDetails) {
+    sNeraca.getCell(`E${kRow}`).value = d.accountName;
+    sNeraca.getCell(`F${kRow}`).value = d.balance;
+    kRow++;
+  }
+  nRow = Math.max(nRow, kRow);
 
-  // Row 17: Details
-  sNeraca.getCell("B17").value = "1.4";
-  sNeraca.getCell("C17").value = "Persediaan Barang Dagangan";
-  sNeraca.getCell("D17").value = 0;
-  sNeraca.getCell("E17").value = "—";
-  sNeraca.getRow(17).height = 18;
+  writeNeracaRow(nRow, "", "Total Aset Lancar", balanceSheet.asetLancar, "Total Kewajiban Lancar", balanceSheet.kewajibanLancar, true);
+  nRow += 2;
 
-  // Row 18: Sub-total 1
-  sNeraca.getCell("A18").value = "Total Aset Lancar";
-  sNeraca.getCell("A18").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("D18").value = balanceSheet.assets;
-  sNeraca.getCell("D18").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("D18").border = { top: borderStyles.thin, bottom: borderStyles.thin };
+  // II. ASET TETAP
+  sNeraca.getCell(`A${nRow}`).value = "II.  ASET TETAP";
+  sNeraca.getCell(`A${nRow}`).font = { name: "Arial", size: 9, bold: true };
+  sNeraca.getCell(`E${nRow}`).value = "II.  KEWAJIBAN JANGKA PANJANG";
+  sNeraca.getCell(`E${nRow}`).font = { name: "Arial", size: 9, bold: true };
+  nRow++;
 
-  sNeraca.getCell("E18").value = "Total Kewajiban Jangka Pendek";
-  sNeraca.getCell("E18").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("F18").value = balanceSheet.liabilities;
-  sNeraca.getCell("F18").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("F18").border = { top: borderStyles.thin, bottom: borderStyles.thin };
-  sNeraca.getRow(18).height = 20;
+  for (const d of balanceSheet.asetTetapDetails) {
+    writeNeracaRow(nRow, d.accountCode, d.accountName, d.balance, "", 0);
+    nRow++;
+  }
+  for (const d of balanceSheet.akumulasiPenyusutanDetails) {
+    writeNeracaRow(nRow, d.accountCode, `${d.accountName} (-)`, -d.balance, "", 0);
+    nRow++;
+  }
+  const kjpStart = nRow - balanceSheet.asetTetapDetails.length - balanceSheet.akumulasiPenyusutanDetails.length;
+  let kjpRow = kjpStart;
+  for (const d of balanceSheet.kewajibanJangkaPanjangDetails) {
+    sNeraca.getCell(`E${kjpRow}`).value = d.accountName;
+    sNeraca.getCell(`F${kjpRow}`).value = d.balance;
+    kjpRow++;
+  }
+  nRow = Math.max(nRow, kjpRow);
 
-  // Row 20: Section title
-  sNeraca.getCell("A20").value = "II.  ASET TIDAK LANCAR";
-  sNeraca.getCell("A20").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("E20").value = "II.  KEWAJIBAN JANGKA PANJANG";
-  sNeraca.getCell("E20").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getRow(20).height = 18;
+  writeNeracaRow(nRow, "", "Total Aset Tetap", balanceSheet.asetTetap, "Total Kewajiban Jangka Panjang", balanceSheet.kewajibanJangkaPanjang, true);
+  nRow += 2;
 
-  // Row 21: Details
-  sNeraca.getCell("B21").value = "2.1";
-  sNeraca.getCell("C21").value = "Aset Tetap — Peralatan Toko";
-  sNeraca.getCell("D21").value = 0;
-  sNeraca.getCell("E21").value = "Utang Bank Pinjaman Jangka Panjang";
-  sNeraca.getCell("F21").value = 0;
-  sNeraca.getRow(21).height = 18;
+  // III. EKUITAS
+  sNeraca.getCell(`E${nRow}`).value = "III. EKUITAS";
+  sNeraca.getCell(`E${nRow}`).font = { name: "Arial", size: 9, bold: true };
+  nRow++;
 
-  // Row 22: Details
-  sNeraca.getCell("B22").value = "2.2";
-  sNeraca.getCell("C22").value = "Akumulasi Penyusutan (minus)";
-  sNeraca.getCell("D22").value = 0;
-  sNeraca.getCell("E22").value = "Kewajiban Jangka Panjang Lainnya";
-  sNeraca.getCell("F22").value = 0;
-  sNeraca.getRow(22).height = 18;
+  for (const d of balanceSheet.ekuitasDetails) {
+    writeNeracaRow(nRow, "", "", 0, d.accountName, d.balance);
+    nRow++;
+  }
 
-  // Row 23: Sub-total 2
-  sNeraca.getCell("A23").value = "Total Aset Tidak Lancar";
-  sNeraca.getCell("A23").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("D23").value = 0;
-  sNeraca.getCell("D23").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("D23").border = { top: borderStyles.thin, bottom: borderStyles.thin };
+  writeNeracaRow(nRow, "", "", 0, "Total Ekuitas", balanceSheet.totalEkuitas, true);
+  nRow += 2;
 
-  sNeraca.getCell("E23").value = "Total Kewajiban Jangka Panjang";
-  sNeraca.getCell("E23").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("F23").value = 0;
-  sNeraca.getCell("F23").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("F23").border = { top: borderStyles.thin, bottom: borderStyles.thin };
-  sNeraca.getRow(23).height = 20;
+  // TOTAL ASET / TOTAL PASIVA
+  sNeraca.getCell(`A${nRow}`).value = "TOTAL ASET";
+  sNeraca.getCell(`A${nRow}`).font = { name: "Arial", size: 10, bold: true };
+  sNeraca.getCell(`D${nRow}`).value = balanceSheet.totalAset;
+  sNeraca.getCell(`D${nRow}`).font = { name: "Arial", size: 10, bold: true };
+  sNeraca.getCell(`D${nRow}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.sectionBg } };
+  sNeraca.getCell(`D${nRow}`).border = { top: borderStyles.medium, bottom: borderStyles.double };
 
-  // Row 25: Section title
-  sNeraca.getCell("E25").value = "III. EKUITAS / MODAL SENDIRI";
-  sNeraca.getCell("E25").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getRow(25).height = 18;
-
-  // Row 26: Details
-  sNeraca.getCell("E26").value = "Modal Disetor (Owner Equity)";
-  sNeraca.getCell("F26").value = balanceSheet.equity - balanceSheet.retainedEarnings;
-  sNeraca.getRow(26).height = 18;
-
-  // Row 27: Details
-  sNeraca.getCell("E27").value = "Saldo Laba Ditahan";
-  sNeraca.getCell("F27").value = balanceSheet.retainedEarnings;
-  sNeraca.getRow(27).height = 18;
-
-  // Row 29: Sub-total 3
-  sNeraca.getCell("E29").value = "Total Ekuitas";
-  sNeraca.getCell("E29").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("F29").value = balanceSheet.equity;
-  sNeraca.getCell("F29").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("F29").border = { top: borderStyles.thin, bottom: borderStyles.thin };
-  sNeraca.getRow(29).height = 20;
-
-  // Row 31: TOTAL AKHIR (Aset vs Pasiva)
-  sNeraca.getCell("A31").value = "TOTAL ASET";
-  sNeraca.getCell("A31").font = { name: "Arial", size: 10, bold: true };
-  sNeraca.getCell("D31").value = balanceSheet.assets;
-  sNeraca.getCell("D31").font = { name: "Arial", size: 10, bold: true };
-  sNeraca.getCell("D31").fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.sectionBg } };
-  sNeraca.getCell("D31").border = { top: borderStyles.medium, bottom: borderStyles.double };
-
-  sNeraca.getCell("E31").value = "TOTAL KEWAJIBAN & EKUITAS";
-  sNeraca.getCell("E31").font = { name: "Arial", size: 10, bold: true };
-  sNeraca.getCell("F31").value = balanceSheet.liabilities + balanceSheet.equity;
-  sNeraca.getCell("F31").font = { name: "Arial", size: 10, bold: true };
-  sNeraca.getCell("F31").fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.sectionBg } };
-  sNeraca.getCell("F31").border = { top: borderStyles.medium, bottom: borderStyles.double };
-  sNeraca.getRow(31).height = 22;
+  sNeraca.getCell(`E${nRow}`).value = "TOTAL KEWAJIBAN & EKUITAS";
+  sNeraca.getCell(`E${nRow}`).font = { name: "Arial", size: 10, bold: true };
+  sNeraca.getCell(`F${nRow}`).value = balanceSheet.totalKewajiban + balanceSheet.totalEkuitas;
+  sNeraca.getCell(`F${nRow}`).font = { name: "Arial", size: 10, bold: true };
+  sNeraca.getCell(`F${nRow}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.sectionBg } };
+  sNeraca.getCell(`F${nRow}`).border = { top: borderStyles.medium, bottom: borderStyles.double };
+  sNeraca.getRow(nRow).height = 22;
 
   // Number formats for all grids in Neraca
-  for (let r = 13; r <= 31; r++) {
+  for (let r = 13; r <= nRow; r++) {
     const row = sNeraca.getRow(r);
     row.getCell(4).numFmt = '#,##0';
     row.getCell(4).alignment = { horizontal: "right" };
@@ -803,21 +938,23 @@ export async function exportAllReportsToExcel(
     if (row.getCell(2).value) row.getCell(2).alignment = { horizontal: "center" };
   }
 
-  // Row 33: Balance Check info
-  sNeraca.getCell("A33").value = "Balance Check :";
-  sNeraca.getCell("A33").font = { name: "Arial", size: 9, bold: true };
-  sNeraca.getCell("D33").value = balanceSheet.isBalanced ? "✓ BALANCE — Selisih Rp 0" : "⚠ UNBALANCED — Perlu Penyesuaian";
-  sNeraca.getCell("D33").font = { name: "Arial", size: 9, bold: true, color: { argb: balanceSheet.isBalanced ? "10B981" : "EF4444" } };
+  // Balance Check info
+  const checkRow = nRow + 2;
+  sNeraca.getCell(`A${checkRow}`).value = "Balance Check :";
+  sNeraca.getCell(`A${checkRow}`).font = { name: "Arial", size: 9, bold: true };
+  sNeraca.getCell(`D${checkRow}`).value = balanceSheet.isBalanced ? "✓ BALANCE — Selisih Rp 0" : "⚠ UNBALANCED — Perlu Penyesuaian";
+  sNeraca.getCell(`D${checkRow}`).font = { name: "Arial", size: 9, bold: true, color: { argb: balanceSheet.isBalanced ? "10B981" : "EF4444" } };
 
-  // Row 35: Neraca Notes
-  sNeraca.mergeCells("A35:G35");
-  const bsNoteCell = sNeraca.getCell("A35");
+  // Neraca Notes
+  const noteRow = checkRow + 2;
+  sNeraca.mergeCells(`A${noteRow}:G${noteRow}`);
+  const bsNoteCell = sNeraca.getCell(`A${noteRow}`);
   bsNoteCell.value = `Catatan:\n1. Neraca disusun berdasarkan General Ledger per 31 Desember ${year}.\n2. Status keseimbangan Aset = Liabilitas + Ekuitas diverifikasi secara sistematis.`;
   bsNoteCell.font = { name: "Arial", size: 8, italic: true, color: { argb: colors.mutedText } };
   bsNoteCell.alignment = { wrapText: true };
 
-  // Signature Block (Row 38-45)
-  formatSignatureBlock(sNeraca, profile, 38, year);
+  // Signature Block
+  formatSignatureBlock(sNeraca, profile, noteRow + 3, year);
 
 
   // ──────────────────────────────────────────

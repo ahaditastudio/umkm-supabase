@@ -1,91 +1,158 @@
 # KasFlow
 
-KasFlow adalah aplikasi pencatatan keuangan dan akuntansi UMKM Indonesia berbasis **Ledger First Accounting System** sesuai PRD v3.0.
+Aplikasi pembukuan keuangan UMKM berbasis **Ledger-First Accounting** dengan double-entry bookkeeping otomatis.
 
-## Status Implementasi Awal
+## ✨ Fitur Utama
 
-Fondasi MVP sudah dibuat dari direktori kosong:
+- **Double-Entry Bookkeeping** - Setiap transaksi otomatis menghasilkan jurnal berpasangan
+- **Real-time Sync** - Data tersinkronisasi secara real-time menggunakan Supabase Realtime
+- **Authentication** - Sistem autentikasi lengkap dengan Supabase Auth
+- **Chart of Accounts** - Struktur akun standar Indonesia (Kas, Bank, Piutang, Hutang, Modal, Pendapatan, Beban)
+- **Financial Reports** - Laporan Laba Rugi, Neraca, Arus Kas
+- **Multi-period Accounting** - Dukungan periode akuntansi bulanan/tahunan
+- **Period Closing** - Tutup buku dengan penguncian jurnal
+- **Audit Trail** - Log aktivitas lengkap untuk setiap transaksi
+- **Soft Delete & Restore** - Data tidak dihapus permanen, bisa dipulihkan
+- **Dark Mode** - Tampilan gelap untuk kenyamanan mata
+- **Responsive Design** - Tampilan optimal di desktop dan mobile
 
-- Next.js 15 + TypeScript + Tailwind CSS
-- UI shell modern SaaS, light/dark mode, responsive, sidebar collapsible
-- Zustand local persisted store untuk mode demo/offline-first
-- React Hook Form + Zod untuk input transaksi
-- TanStack Query provider
-- Firebase client config, Firebase Auth UI, Firestore sync, Hosting config, Firestore/Storage rules
-- Cloud Functions scaffold untuk server-side dashboard aggregation
+## 🛠️ Tech Stack
 
-## Fitur yang Sudah Ada
+- **Framework**: Next.js 15 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **State Management**: Zustand
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
+- **Real-time**: Supabase Realtime
+- **Forms**: React Hook Form + Zod
 
-- Dashboard KPI dari jurnal: total kas, bank, pendapatan, pengeluaran, laba bersih, estimasi pajak
-- Transaksi pemasukan, pengeluaran, transfer antar kas
-- Auto journal generation:
-  - Income: Debit Kas, Credit Pendapatan
-  - Expense: Debit Beban, Credit Kas
-  - Transfer: Debit Destination, Credit Source
-- General Journal sebagai source of truth
-- Ledger per account dengan running balance
-- Chart of Accounts default sesuai PRD
-- Laporan: Gross Revenue, Profit & Loss, Balance Sheet, Cash Flow
-- Pajak dinamis: rate, base, due day, monthly/annual estimation
-- Accounting period dan month-end closing dengan konfirmasi `TUTUP BUKU`
-- Opening balance otomatis menjadi jurnal
-- Master data: kategori, cash accounts, customer/supplier create + soft delete
-- Utilities: dummy data, seed demo company, reset data, backup JSON, recycle bin
-- Audit log dasar
-- Onboarding wizard 3 step
+## 🚀 Getting Started
 
-## Menjalankan Project
+### Prerequisites
 
+- Node.js 18+ dan npm
+- Akun Supabase (gratis)
+
+### Instalasi
+
+1. Clone repository
+```bash
+git clone <repository-url>
+cd kasflow-supabase
+```
+
+2. Install dependencies
 ```bash
 npm install
+```
+
+3. Setup Supabase Database
+   - Buat project baru di [Supabase Dashboard](https://supabase.com)
+   - Buka SQL Editor di Supabase Dashboard
+   - Copy-paste seluruh isi file `supabase-schema.sql` ke SQL Editor
+   - Klik "Run" untuk menjalankan schema
+
+4. Konfigurasi Environment Variables
+   - Buat file `.env.local` berdasarkan `.env.example`
+   - Isi dengan kredensial Supabase Anda:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=your-project-url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+5. Jalankan development server
+```bash
 npm run dev
 ```
 
-Buka `http://localhost:3000`.
+Buka [http://localhost:3000](http://localhost:3000) di browser.
 
-## Firebase Setup
+## 📝 Penggunaan
 
-Konfigurasi Firebase web app sudah dipasang di `.env.local` untuk project `umkm-finance-7409d`.
+### Registrasi & Login
+- Daftar dengan email, password, dan nama bisnis
+- Sistem akan otomatis membuat company profile dan data awal
+- Login dengan email dan password yang sudah terdaftar
 
-Di Firebase Console, pastikan:
+### Transaksi
+- **Income**: Catat pemasukan dengan memilih kategori dan akun kas
+- **Expense**: Catat pengeluaran dengan memilih kategori dan akun kas
+- **Transfer**: Pindahkan uang antar akun kas/bank
 
-1. Authentication → Sign-in method → Email/Password aktif.
-2. Firestore Database sudah dibuat.
-3. Rules sudah dideploy:
+### Akuntansi
+- **Journal & Ledger**: Lihat semua jurnal dan buku besar
+- **Chart of Accounts**: Kelola struktur akun
+- **Accounting Periods**: Atur periode akuntansi dan tutup buku
+
+### Master Data
+- **Categories**: Kelola kategori transaksi (penjualan, pembelian, dll)
+- **Cash Accounts**: Kelola akun kas/bank/e-wallet
+- **Contacts**: Kelola customer dan supplier
+
+### Laporan
+- **Laba Rugi**: Pendapatan - Beban = Laba/Rugi
+- **Neraca**: Aset = Kewajiban + Ekuitas
+- **Arus Kas**: Aliran kas masuk dan keluar
+
+### Utilitas
+- **Generate Dummy Data**: Buat data contoh untuk testing
+- **Seed Demo Company**: Buat perusahaan demo lengkap
+- **Backup & Restore**: Export/import data dalam format JSON
+- **Recycle Bin**: Pulihkan data yang sudah dihapus
+
+## 🗄️ Database Schema
+
+Aplikasi ini menggunakan 12 tabel utama:
+
+1. **users** - Data user dan relasi ke company
+2. **business_profiles** - Profil perusahaan
+3. **accounts** - Chart of Accounts (CoA)
+4. **account_categories** - Kategori transaksi
+5. **cash_accounts** - Akun kas/bank/e-wallet
+6. **customers** - Data customer
+7. **suppliers** - Data supplier
+8. **transactions** - Transaksi keuangan
+9. **journal_entries** - Jurnal akuntansi (source of truth)
+10. **tax_settings** - Pengaturan pajak
+11. **accounting_periods** - Periode akuntansi
+12. **audit_logs** - Log aktivitas
+
+Semua tabel dilindungi dengan Row Level Security (RLS) untuk memastikan data isolation antar perusahaan.
+
+## 🔐 Keamanan
+
+- **Row Level Security (RLS)** - Setiap user hanya bisa mengakses data perusahaannya sendiri
+- **Password Hashing** - Password di-hash menggunakan bcrypt
+- **JWT Tokens** - Session management menggunakan JWT
+- **Environment Variables** - Kredensial disimpan di environment variables
+
+## 📦 Build untuk Production
 
 ```bash
-firebase deploy --only firestore:rules,storage
-```
-
-Saat user register dari `/auth`, app otomatis membuat:
-
-- `users/{uid}`
-- `business_profiles/{companyId}`
-- default `accounts`
-- default `account_categories`
-- default `cash_accounts`
-- default `tax_settings`
-- default `accounting_periods`
-
-Setelah login, data app disinkronkan realtime dari Firestore ke Zustand cache.
-
-Untuk Functions:
-
-```bash
-cd functions
-npm install
 npm run build
-firebase deploy --only functions
+npm start
 ```
 
-## Catatan Arsitektur
+## 🧪 Testing
 
-Semua laporan dihitung dari `journalEntries`, bukan dari `transactions`. Transaksi hanya menjadi input operasional untuk menghasilkan jurnal otomatis.
-
-Flow production saat ini:
-
-```txt
-UI → Firestore write service → Firestore → realtime sync → Zustand cache → reports dari journalEntries
+```bash
+npm run lint
+npm run type-check
 ```
 
-Zustand tetap dipakai sebagai cache/UI state, sementara Firestore menjadi source of truth setelah user login.
+## 📄 License
+
+MIT License - lihat file [LICENSE](LICENSE) untuk detail
+
+## 🤝 Kontribusi
+
+Kontribusi sangat diterima! Silakan buat pull request atau buka issue untuk diskusi.
+
+## 📧 Support
+
+Jika ada pertanyaan atau masalah, silakan buka issue di GitHub repository.
+
+---
+
+**KasFlow** - Aplikasi Pembukuan UMKM Modern dengan Ledger-First Approach

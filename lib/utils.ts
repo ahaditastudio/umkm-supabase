@@ -65,3 +65,19 @@ export function percentageChange(current: number, previous: number) {
   if (!previous) return current ? 100 : 0;
   return ((current - previous) / Math.abs(previous)) * 100;
 }
+
+/** Format number with thousand separators (Indonesian locale: dots) */
+export function formatNumberInput(value: number | string): string {
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (isNaN(num) || num === 0) return "";
+  return new Intl.NumberFormat("id-ID", {
+    maximumFractionDigits: 0,
+  }).format(Math.floor(num));
+}
+
+/** Parse formatted number string back to number */
+export function parseNumberInput(value: string): number {
+  // Remove all dots (thousand separators in id-ID)
+  const cleaned = value.replace(/\./g, "").replace(/[^0-9]/g, "");
+  return cleaned ? parseInt(cleaned, 10) : 0;
+}

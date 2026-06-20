@@ -4,6 +4,10 @@ import "@/app/globals.css";
 import { AppShell } from "@/components/app-shell";
 import { Providers } from "@/components/providers";
 
+// Force dynamic rendering — all pages are 100% client-side rendered.
+// Prevents static pre-render errors from browser-only APIs (localStorage, Supabase client).
+export const dynamic = "force-dynamic";
+
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
   variable: "--font-plus-jakarta-sans",

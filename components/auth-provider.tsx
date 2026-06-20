@@ -1,23 +1,8 @@
 "use client";
 
-import {
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-  type User,
-} from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { auth, db, isFirebaseConfigured } from "@/lib/firebase";
-import { bootstrapCompanyForUser } from "@/lib/firestore/bootstrap";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { bootstrapCompanyForUser } from "@/lib/supabase/bootstrap";
 import type { UserRole } from "@/lib/types";
 
 type AppUser = {
@@ -28,7 +13,7 @@ type AppUser = {
 };
 
 type AuthContextValue = {
-  firebaseUser: User | null;
+  supabaseUser: any | null;
   appUser: AppUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -43,86 +28,172 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [supabaseUser, setSupabaseUser] = useState<any | null>(null);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const registeringRef = useRef(false);
+
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !auth || !db) {
+    if (!isSupabaseConfigured) {
       setLoading(false);
       return;
     }
 
-    const firebaseAuth = auth;
-    const firestore = db;
-
-    return onAuthStateChanged(firebaseAuth, async (user) => {
+    const initAuth = async () => {
       try {
-        setFirebaseUser(user);
+        // Use getSession() instead of getUser() - much faster as it reads
+        // from local storage first without blocking network call
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user ?? null;
+
+        setSupabaseUser(user);
 
         if (!user) {
           setAppUser(null);
           return;
         }
 
-        if (registeringRef.current) {
+        // Fetch user profile and business profile in PARALLEL
+        const [userResult, profileResult] = await Promise.all([
+          supabase.from("users").select("*").eq("uid", user.id).maybeSingle(),
+          // Try to find business profile via users table relationship
+          supabase
+            .from("users")
+            .select("company_id, business_profiles(*)")
+            .eq("uid", user.id)
+            .maybeSingle(),
+        ]);
+
+        const userProfile = userResult.data;
+        const userError = userResult.error;
+        const joinedProfile = profileResult.data as any;
+
+        if (userError && userError.code !== "PGRST116") {
+          console.error("Error fetching user profile:", userError);
+          setAppUser(null);
           return;
         }
 
-        const userSnapshot = await getDoc(doc(firestore, "users", user.uid));
-        if (userSnapshot.exists()) {
-          const data = userSnapshot.data();
-          const companyId = String(data.companyId);
-          const profileSnapshot = await getDoc(
-            doc(firestore, "business_profiles", companyId),
-          );
+        if (userProfile && joinedProfile?.business_profiles) {
+          const profile = joinedProfile.business_profiles;
+          setAppUser({
+            uid: user.id,
+            email: user.email ?? null,
+            companyId: userProfile.company_id,
+            role: (userProfile.role ?? "owner") as UserRole,
+          });
+        } else if (userProfile) {
+          // Fallback: fetch business profile directly
+          const { data: profile } = await supabase
+            .from("business_profiles")
+            .select("*")
+            .eq("id", userProfile.company_id)
+            .maybeSingle();
 
-          if (!profileSnapshot.exists()) {
+          if (profile) {
+            setAppUser({
+              uid: user.id,
+              email: user.email ?? null,
+              companyId: userProfile.company_id,
+              role: (userProfile.role ?? "owner") as UserRole,
+            });
+          } else {
+            // Bootstrap if profile missing
+            try {
+              const result = await bootstrapCompanyForUser({
+                uid: user.id,
+                email: user.email ?? null,
+                businessName: user.email?.split("@")[0] ?? "Bisnis Baru",
+              });
+              setAppUser({
+                uid: user.id,
+                email: user.email ?? null,
+                companyId: result.companyId,
+                role: result.role,
+              });
+            } catch (bootstrapErr) {
+              console.error("Bootstrap error:", bootstrapErr);
+              setAppUser(null);
+            }
+          }
+        } else {
+          // No user profile, bootstrap
+          try {
             const result = await bootstrapCompanyForUser({
-              uid: user.uid,
-              email: user.email,
+              uid: user.id,
+              email: user.email ?? null,
               businessName: user.email?.split("@")[0] ?? "Bisnis Baru",
             });
             setAppUser({
-              uid: user.uid,
-              email: user.email,
+              uid: user.id,
+              email: user.email ?? null,
               companyId: result.companyId,
               role: result.role,
             });
-          } else {
-            setAppUser({
-              uid: user.uid,
-              email: user.email,
-              companyId,
-              role: (data.role ?? "owner") as UserRole,
-            });
+          } catch (bootstrapErr) {
+            console.error("Bootstrap error:", bootstrapErr);
+            setAppUser(null);
           }
-        } else {
-          const result = await bootstrapCompanyForUser({
-            uid: user.uid,
-            email: user.email,
-            businessName: user.email?.split("@")[0] ?? "Bisnis Baru",
-          });
-          setAppUser({
-            uid: user.uid,
-            email: user.email,
-            companyId: result.companyId,
-            role: result.role,
-          });
         }
-      } catch (error) {
-        console.error("[AuthProvider] Error resolving auth state:", error);
+      } catch (err) {
+        console.error("Auth initialization error:", err);
         setAppUser(null);
+        setSupabaseUser(null);
       } finally {
         setLoading(false);
       }
-    });
-  }, []);
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setSupabaseUser(session?.user ?? null);
+
+        if (!session?.user) {
+          setAppUser(null);
+          return;
+        }
+
+        // On sign in, load profile
+        if (event === "SIGNED_IN") {
+          try {
+            const { data: userProfile, error } = await supabase
+              .from("users")
+              .select("*")
+              .eq("uid", session.user.id)
+              .maybeSingle();
+
+            if (error) {
+              console.error("Error fetching user on auth change:", error);
+              return;
+            }
+
+            if (userProfile) {
+              setAppUser({
+                uid: session.user.id,
+                email: session.user.email ?? null,
+                companyId: userProfile.company_id,
+                role: (userProfile.role ?? "owner") as UserRole,
+              });
+            }
+          } catch (err) {
+            console.error("Auth state change error:", err);
+          }
+        }
+      },
+    );
+
+    return () => subscription.unsubscribe();
+  }, [supabase]);
 
   const login = async (email: string, password: string) => {
-    if (!auth) throw new Error("Firebase belum dikonfigurasi.");
-    await signInWithEmailAndPassword(auth, email, password);
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
   };
 
   const register = async (
@@ -130,39 +201,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     password: string,
     businessName: string,
   ) => {
-    if (!auth) throw new Error("Firebase belum dikonfigurasi.");
-    registeringRef.current = true;
-    try {
-      const credential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password,
-      );
-      const result = await bootstrapCompanyForUser({
-        uid: credential.user.uid,
-        email,
-        businessName,
-      });
-      setFirebaseUser(credential.user);
-      setAppUser({
-        uid: credential.user.uid,
-        email,
-        companyId: result.companyId,
-        role: result.role,
-      });
-    } finally {
-      registeringRef.current = false;
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    if (error) throw error;
+
+    if (data.user) {
+      try {
+        const result = await bootstrapCompanyForUser({
+          uid: data.user.id,
+          email,
+          businessName,
+        });
+        setSupabaseUser(data.user);
+        setAppUser({
+          uid: data.user.id,
+          email,
+          companyId: result.companyId,
+          role: result.role,
+        });
+      } catch (bootstrapError) {
+        console.error('Bootstrap error:', bootstrapError);
+        throw new Error(`Registrasi berhasil, tapi gagal membuat profil: ${bootstrapError instanceof Error ? bootstrapError.message : 'Unknown error'}`);
+      }
     }
   };
 
   const logout = async () => {
-    if (!auth) return;
-    await signOut(auth);
+    await supabase.auth.signOut();
   };
 
   const value = useMemo(
-    () => ({ firebaseUser, appUser, loading, login, register, logout }),
-    [firebaseUser, appUser, loading],
+    () => ({ supabaseUser, appUser, loading, login, register, logout }),
+    [supabaseUser, appUser, loading],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

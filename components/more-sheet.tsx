@@ -8,11 +8,14 @@ import {
   Calculator,
   DatabaseZap,
   Settings,
+  ShoppingCart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const moreItems = [
   { name: "Master Data", href: "/master-data", icon: Building2, color: "text-blue-500 bg-blue-500/10" },
+  { name: "Laporan", href: "/reports", icon: DatabaseZap, color: "text-green-500 bg-green-500/10" },
+  { name: "Integrasi Marketplace", href: "/integrations", icon: ShoppingCart, color: "text-orange-500 bg-orange-500/10" },
   { name: "Pajak", href: "/tax", icon: Calculator, color: "text-amber-500 bg-amber-500/10" },
   { name: "Utilitas", href: "/utilities", icon: DatabaseZap, color: "text-purple-500 bg-purple-500/10" },
   { name: "Pengaturan", href: "/settings", icon: Settings, color: "text-zinc-500 bg-zinc-500/10" },

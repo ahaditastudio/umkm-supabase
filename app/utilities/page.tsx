@@ -1,21 +1,24 @@
 "use client";
 
 import {
+  CheckCircle2,
   Download,
   Loader2,
   RotateCcw,
   Trash2,
   Upload,
   Wand2,
+  XCircle,
   Receipt,
   Package,
   User,
 } from "lucide-react";
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ConfirmModal } from "@/components/ui/modal";
 import {
   Card,
   CardContent,
@@ -26,30 +29,69 @@ import {
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
-  generateDummyDataFirestore,
-  resetBusinessDataFirestore,
-  restoreCustomerFirestore,
-  restoreFromBackupFirestore,
-  restoreSupplierFirestore,
-  restoreTransactionFirestore,
-  seedDemoCompanyFirestore,
-} from "@/lib/firestore/company-service";
+  restoreCustomer,
+  restoreSupplier,
+  restoreTransaction,
+  bulkInsertTransactions,
+  bulkInsertContacts,
+  updateBusinessProfile,
+  resetCompanyData,
+} from "@/lib/supabase/company-service";
+import {
+  createSeedTransactions,
+  createDemoCustomers,
+  createDemoSuppliers,
+  createOpeningBalanceJournal,
+  createSeedJournals,
+  generateJournalFromTransaction,
+} from "@/lib/accounting";
+import { uid } from "@/lib/utils";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
+import type { BusinessProfile } from "@/lib/types";
 
 export default function UtilitiesPage() {
   const { appUser } = useAuth();
   const store = useKasFlowStore();
   const [dummyCount, setDummyCount] = useState(50);
   const [resetConfirmation, setResetConfirmation] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [notification, setNotification] = useState<{
+    type: "success" | "error" | "info";
+    message: string;
+    details?: string;
+  } | null>(null);
+
+  // Auto-dismiss notification after 8s
+  const notify = useCallback(
+    (type: "success" | "error" | "info", message: string, details?: string) => {
+      setNotification({ type, message, details });
+      setTimeout(() => setNotification(null), 8000);
+    },
+    [],
+  );
+
+  // Loading states per action
+  const [generateLoading, setGenerateLoading] = useState(false);
+  const [seedLoading, setSeedLoading] = useState(false);
+  const [resetDataLoading, setResetDataLoading] = useState(false);
 
   // Backup restore state
   const [backupData, setBackupData] = useState<Record<string, unknown> | null>(
     null,
   );
   const [backupInfo, setBackupInfo] = useState<string | null>(null);
-  const [restoreLoading, setRestoreLoading] = useState(false);
+
+  // Lazy load journal entries when page mounts
+  const loadJournalEntries = useKasFlowStore((state) => state.loadJournalEntries);
+  const journalEntriesLoaded = useKasFlowStore((state) => state.journalEntriesLoaded);
+
+  useEffect(() => {
+    if (!journalEntriesLoaded) {
+      loadJournalEntries();
+    }
+  }, [loadJournalEntries, journalEntriesLoaded]);
 
   const deletedTransactions = useMemo(
     () => store.transactions.filter((item) => item.deletedAt),
@@ -89,8 +131,10 @@ export default function UtilitiesPage() {
     anchor.download = `kasflow-backup-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
-    setMessage(
-      "Backup JSON berhasil dibuat. ZIP restore disiapkan sebagai tahap berikutnya.",
+    notify(
+      "success",
+      "Backup JSON berhasil dibuat.",
+      "ZIP restore disiapkan sebagai tahap berikutnya.",
     );
   };
 
@@ -128,56 +172,66 @@ export default function UtilitiesPage() {
     reader.readAsText(file);
   };
 
-  const handleRestore = async () => {
+  const handleRestore = () => {
     if (!backupData) return;
-    const confirmed = window.confirm(
-      "Apakah kamu yakin ingin melakukan restore? Data saat ini akan ditimpa oleh data dari file backup.",
-    );
-    if (!confirmed) return;
+    setShowRestoreConfirm(true);
+  };
+
+  const doRestore = async () => {
+    setShowRestoreConfirm(false);
     setRestoreLoading(true);
-    setMessage(null);
+    setNotification(null);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const backupPayload = backupData as any;
-      if (appUser) {
-        await restoreFromBackupFirestore(
-          appUser.companyId,
-          backupPayload as Record<string, unknown[]>,
-        );
-      }
+      // Restore from backup now only works locally
       store.restoreFromBackup(backupPayload);
-      setMessage("Restore berhasil. Data telah dipulihkan dari file backup.");
+      notify("success", "Restore berhasil.", "Data telah dipulihkan dari file backup.");
       setBackupData(null);
       setBackupInfo(null);
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Gagal melakukan restore.",
+      notify(
+        "error",
+        "Gagal melakukan restore.",
+        error instanceof Error ? error.message : "Unknown error",
       );
     } finally {
       setRestoreLoading(false);
     }
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (resetConfirmation !== "RESET DATA") {
-      setMessage("Konfirmasi harus mengetik RESET DATA.");
+      notify("error", "Konfirmasi harus mengetik RESET DATA.");
       return;
     }
-    if (appUser) {
-      resetBusinessDataFirestore(appUser.companyId).catch((error) => {
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "Gagal reset data Firestore.",
-        );
-      });
-    } else {
-      store.resetBusinessData();
+    setResetDataLoading(true);
+    setNotification(null);
+    try {
+      // Reset data di database (jika authenticated)
+      if (appUser?.companyId) {
+        await resetCompanyData(appUser.companyId);
+        // Tunggu realtime sync untuk update store
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } else {
+        // Reset lokal jika tidak authenticated
+        store.resetBusinessData();
+      }
+      setResetConfirmation("");
+      notify(
+        "success",
+        "Data bisnis berhasil di-reset.",
+        "Profile, COA, kategori, cash accounts, dan tax settings dipertahankan.",
+      );
+    } catch (error) {
+      notify(
+        "error",
+        "Gagal melakukan reset data.",
+        error instanceof Error ? error.message : "Unknown error",
+      );
+    } finally {
+      setResetDataLoading(false);
     }
-    setResetConfirmation("");
-    setMessage(
-      "Data bisnis berhasil di-reset. Profile, COA, kategori, cash accounts, dan tax settings dipertahankan.",
-    );
   };
 
   return (
@@ -213,23 +267,74 @@ export default function UtilitiesPage() {
             </Select>
             <Button
               className="w-full"
+              disabled={generateLoading}
               onClick={async () => {
-                if (appUser) {
-                  await generateDummyDataFirestore(
-                    appUser.companyId,
-                    dummyCount,
-                    store.categories,
-                    store.cashAccounts,
+                setGenerateLoading(true);
+                setNotification(null);
+                try {
+                  const companyId = appUser?.companyId ?? store.companyId;
+
+                  // Generate data langsung (bukan via store) agar bisa dikontrol
+                  // Use store categories/cashAccounts (prefixed IDs from DB) for correct references
+                  const rawTransactions = createSeedTransactions(dummyCount, 6, companyId, store.categories, store.cashAccounts);
+                  // Override ID agar unik dan konsisten
+                  const newTransactions = rawTransactions.map((t, i) => ({
+                    ...t,
+                    id: uid(`dummy_${i}`),
+                    description: `${t.description} #${store.transactions.length + i + 1}`,
+                  }));
+
+                  // Generate journal entries dari transaksi baru
+                  const newJournalEntries = newTransactions.map((tx) =>
+                    generateJournalFromTransaction(tx, store.categories, store.cashAccounts, store.accounts),
                   );
-                } else {
-                  store.generateDummyData(dummyCount);
+
+                  if (appUser?.companyId) {
+                    // Insert ke Supabase — data sudah pakai companyId yang benar
+                    await bulkInsertTransactions(
+                      appUser.companyId,
+                      newTransactions,
+                      newJournalEntries,
+                    );
+                    // Tunggu realtime sync untuk update store
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                    notify(
+                      "success",
+                      `${dummyCount} dummy transactions + journals berhasil dibuat!`,
+                      `Data berhasil disimpan ke database Supabase (company: ${appUser.companyId.slice(0, 8)}…).`,
+                    );
+                  } else {
+                    // Local only mode - update store langsung
+                    store.generateDummyData(dummyCount);
+                    notify(
+                      "info",
+                      `${dummyCount} dummy transactions + journals berhasil dibuat.`,
+                      "Data disimpan secara lokal (tidak login ke Supabase).",
+                    );
+                  }
+                } catch (error) {
+                  console.error("Error generating dummy data:", error);
+                  const errMsg = error instanceof Error ? error.message : "Unknown error";
+                  const errDetail =
+                    error && typeof error === "object" && "details" in error
+                      ? String((error as any).details)
+                      : undefined;
+                  notify(
+                    "error",
+                    "Gagal generate dummy data.",
+                    errDetail ?? errMsg,
+                  );
+                } finally {
+                  setGenerateLoading(false);
                 }
-                setMessage(
-                  `${dummyCount} dummy transactions + journals berhasil dibuat.`,
-                );
               }}
             >
-              <Wand2 className="h-4 w-4" /> Generate
+              {generateLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}{" "}
+              Generate
             </Button>
           </CardContent>
         </Card>
@@ -247,20 +352,88 @@ export default function UtilitiesPage() {
             </div>
             <Button
               className="w-full"
+              disabled={seedLoading}
               onClick={async () => {
-                if (appUser) {
-                  await seedDemoCompanyFirestore(
-                    appUser.companyId,
-                    store.categories,
-                    store.cashAccounts,
+                setSeedLoading(true);
+                setNotification(null);
+                try {
+                  const companyId = appUser?.companyId ?? store.companyId;
+
+                  // Generate data langsung dengan companyId yang benar
+                  // Use store categories/cashAccounts (prefixed IDs from DB) for journal generation
+                  const dbCategories = store.categories;
+                  const dbCashAccounts = store.cashAccounts;
+                  const newTransactions = createSeedTransactions(300, 6, companyId, dbCategories, dbCashAccounts);
+                  const openingJournal = createOpeningBalanceJournal(companyId, undefined, store.accounts);
+                  const newJournalEntries = [
+                    openingJournal,
+                    ...newTransactions.map((tx) =>
+                      generateJournalFromTransaction(tx, dbCategories, dbCashAccounts, store.accounts),
+                    ),
+                  ];
+                  const newCustomers = createDemoCustomers(100, companyId);
+                  const newSuppliers = createDemoSuppliers(25, companyId);
+
+                  if (appUser?.companyId) {
+                    // Insert ke Supabase
+                    await bulkInsertTransactions(
+                      appUser.companyId,
+                      newTransactions,
+                      newJournalEntries,
+                    );
+                    await bulkInsertContacts(
+                      appUser.companyId,
+                      newCustomers,
+                      newSuppliers,
+                    );
+
+                    // Update profile di database
+                    await updateBusinessProfile(appUser.companyId, {
+                      businessName: "Demo Company",
+                      businessType: "retail",
+                      taxNumber: "09.123.456.7-890.000",
+                    } as Partial<BusinessProfile>);
+
+                    // Tunggu realtime sync
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+                    notify(
+                      "success",
+                      "Demo company berhasil dibuat!",
+                      `300 transaksi, ${newJournalEntries.length} jurnal, 100 customer, 25 supplier disimpan ke Supabase.`,
+                    );
+                  } else {
+                    // Local only mode - update store langsung
+                    store.seedDemoCompany();
+                    notify(
+                      "info",
+                      "Demo company berhasil dibuat.",
+                      "Data disimpan secara lokal (tidak login ke Supabase).",
+                    );
+                  }
+                } catch (error) {
+                  console.error("Error seeding demo company:", error);
+                  const errMsg = error instanceof Error ? error.message : "Unknown error";
+                  const errDetail =
+                    error && typeof error === "object" && "details" in error
+                      ? String((error as any).details)
+                      : undefined;
+                  notify(
+                    "error",
+                    "Gagal seed demo company.",
+                    errDetail ?? errMsg,
                   );
-                } else {
-                  store.seedDemoCompany();
+                } finally {
+                  setSeedLoading(false);
                 }
-                setMessage("Demo company berhasil dibuat.");
               }}
             >
-              <Wand2 className="h-4 w-4" /> Seed Demo Company
+              {seedLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}{" "}
+              Seed Demo Company
             </Button>
           </CardContent>
         </Card>
@@ -330,14 +503,71 @@ export default function UtilitiesPage() {
               placeholder="Ketik RESET DATA"
             />
           </div>
-          <Button variant="destructive" onClick={handleReset}>
-            <Trash2 className="h-4 w-4" /> Reset Data
+          <Button
+            variant="destructive"
+            disabled={resetDataLoading}
+            onClick={handleReset}
+          >
+            {resetDataLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}{" "}
+            Reset Data
           </Button>
         </CardContent>
       </Card>
 
-      {message ? (
-        <p className="rounded-xl border bg-card px-4 py-3 text-sm">{message}</p>
+      {notification ? (
+        <div
+          className={cn(
+            "flex items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-sm transition-all animate-in slide-in-from-top-2 duration-300",
+            notification.type === "success" &&
+              "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300",
+            notification.type === "error" &&
+              "border-red-200 bg-red-50 text-red-800 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300",
+            notification.type === "info" &&
+              "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300",
+          )}
+        >
+          {notification.type === "success" ? (
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          ) : notification.type === "error" ? (
+            <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
+          ) : (
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Badge
+                tone={
+                  notification.type === "success"
+                    ? "green"
+                    : notification.type === "error"
+                      ? "red"
+                      : "blue"
+                }
+              >
+                {notification.type === "success"
+                  ? "Sukses"
+                  : notification.type === "error"
+                    ? "Error"
+                    : "Info"}
+              </Badge>
+              <p className="font-semibold">{notification.message}</p>
+            </div>
+            {notification.details ? (
+              <p className="mt-1 text-xs opacity-80">{notification.details}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotification(null)}
+            className="shrink-0 rounded-md p-0.5 opacity-60 hover:opacity-100 transition"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        </div>
       ) : null}
 
       {/* ── Recycle Bin ── */}
@@ -413,7 +643,7 @@ export default function UtilitiesPage() {
                               className="h-7 text-[10px] font-semibold tracking-wide gap-1 shadow-sm px-2.5"
                               onClick={async () => {
                                 if (appUser) {
-                                  await restoreTransactionFirestore(
+                                  await restoreTransaction(
                                     appUser.companyId,
                                     transaction.id,
                                   );
@@ -461,7 +691,7 @@ export default function UtilitiesPage() {
                               className="h-7 text-[10px] font-semibold tracking-wide gap-1 shadow-sm px-2.5 shrink-0"
                               onClick={async () => {
                                 if (appUser) {
-                                  await restoreCustomerFirestore(
+                                  await restoreCustomer(
                                     appUser.companyId,
                                     customer.id,
                                   );
@@ -509,7 +739,7 @@ export default function UtilitiesPage() {
                               className="h-7 text-[10px] font-semibold tracking-wide gap-1 shadow-sm px-2.5 shrink-0"
                               onClick={async () => {
                                 if (appUser) {
-                                  await restoreSupplierFirestore(
+                                  await restoreSupplier(
                                     appUser.companyId,
                                     supplier.id,
                                   );
@@ -531,6 +761,16 @@ export default function UtilitiesPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmModal
+        open={showRestoreConfirm}
+        onClose={() => setShowRestoreConfirm(false)}
+        onConfirm={doRestore}
+        title="Konfirmasi Restore"
+        description="Apakah kamu yakin ingin melakukan restore? Data saat ini akan ditimpa oleh data dari file backup."
+        confirmLabel="Restore"
+        loading={restoreLoading}
+      />
     </div>
   );
 }

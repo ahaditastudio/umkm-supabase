@@ -15,21 +15,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
-import { isFirebaseConfigured } from "@/lib/firebase";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 
 function getAuthErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "Autentikasi gagal.";
-  if (message.includes("auth/email-already-in-use"))
+  if (message.includes("User already registered"))
     return "Email sudah terdaftar.";
-  if (message.includes("auth/invalid-credential"))
+  if (message.includes("Invalid login credentials"))
     return "Email atau password salah.";
-  if (message.includes("auth/weak-password"))
+  if (message.includes("Password should be at least"))
     return "Password minimal 6 karakter.";
-  if (message.includes("auth/invalid-email"))
-    return "Format email tidak valid.";
-  if (message.includes("auth/operation-not-allowed")) {
-    return "Metode Email/Password belum aktif di Firebase Authentication. Buka Firebase Console → Authentication → Sign-in method → aktifkan Email/Password.";
-  }
+  if (message.includes("Email not confirmed"))
+    return "Email belum dikonfirmasi. Silakan cek inbox Anda.";
   return message;
 }
 
@@ -99,7 +96,7 @@ export default function AuthPage() {
             </div>
             <div className="flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              <span className="text-xs text-zinc-300 font-medium">Keamanan Enkripsi Firebase Cloud</span>
+              <span className="text-xs text-zinc-300 font-medium">Keamanan Enkripsi Supabase PostgreSQL</span>
             </div>
           </div>
         </div>
@@ -123,7 +120,7 @@ export default function AuthPage() {
           <Card className="border-zinc-200/50 dark:border-zinc-800/40 shadow-soft">
             <CardHeader className="space-y-2">
               <div className="flex items-center justify-between">
-                <Badge tone="blue">Firebase Cloud</Badge>
+                <Badge tone="blue">Supabase Cloud</Badge>
               </div>
               <CardTitle className="text-xl font-bold tracking-tight">
                 {mode === "login" ? "Selamat Datang Kembali" : "Buat Akun Bisnis Baru"}
@@ -135,10 +132,10 @@ export default function AuthPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {!isFirebaseConfigured ? (
+              {!isSupabaseConfigured ? (
                 <div className="space-y-4 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-xs text-destructive leading-relaxed">
                   <p className="font-medium">
-                    Konfigurasi Firebase Belum Ditemukan.
+                    Konfigurasi Supabase Belum Ditemukan.
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     Silakan pastikan file `.env.local` sudah terisi dengan benar di server lokal Anda.

@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarClock, FileCheck, Percent } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { MetricCard } from "@/components/metric-card";
 import { Badge } from "@/components/ui/badge";
@@ -14,8 +14,9 @@ import {
 } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { calculateProfitLoss, calculateTaxReport } from "@/lib/accounting";
-import { updateTaxSettingsFirestore } from "@/lib/firestore/company-service";
+import { calculateTaxReport } from "@/lib/accounting";
+import { calculateProfitLossMemo, calculateTaxReportMemo } from "@/lib/accounting-memoized";
+import { updateTaxSettings as updateTaxSettingsDB } from "@/lib/supabase/company-service";
 import type { TaxSettings } from "@/lib/types";
 import { formatCurrency, formatDate, monthKey, toInputDate } from "@/lib/utils";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
@@ -24,23 +25,32 @@ export default function TaxPage() {
   const { appUser } = useAuth();
   const accounts = useKasFlowStore((state) => state.accounts);
   const journalEntries = useKasFlowStore((state) => state.journalEntries);
+  const journalEntriesLoaded = useKasFlowStore((state) => state.journalEntriesLoaded);
+  const loadJournalEntries = useKasFlowStore((state) => state.loadJournalEntries);
+  const companyId = useKasFlowStore((state) => state.companyId);
   const taxSettings = useKasFlowStore((state) => state.taxSettings);
   const updateTaxSettings = useKasFlowStore((state) => state.updateTaxSettings);
   const [period, setPeriod] = useState(monthKey(new Date()));
+
+  useEffect(() => {
+    if (companyId && !journalEntriesLoaded) {
+      loadJournalEntries();
+    }
+  }, [companyId, journalEntriesLoaded, loadJournalEntries]);
   const taxReport = useMemo(
-    () => calculateTaxReport(journalEntries, accounts, taxSettings, period),
+    () => calculateTaxReportMemo(journalEntries, accounts, taxSettings, period),
     [journalEntries, accounts, taxSettings, period],
   );
   const persistTaxSettings = async (settings: Partial<TaxSettings>) => {
     const nextSettings = { ...taxSettings, ...settings };
     updateTaxSettings(settings);
     if (appUser)
-      await updateTaxSettingsFirestore(appUser.companyId, nextSettings);
+      await updateTaxSettingsDB(appUser.companyId, nextSettings);
   };
 
   const annual = useMemo(() => {
     const year = Number(period.slice(0, 4));
-    const report = calculateProfitLoss(
+    const report = calculateProfitLossMemo(
       journalEntries,
       accounts,
       toInputDate(new Date(year, 0, 1)),

@@ -1,10 +1,12 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { RotateCcw, Trash2, PlusCircle, Search, Calendar, Filter, ArrowDownLeft, ArrowUpRight, ArrowLeftRight } from "lucide-react";
+import { RotateCcw, Trash2, PlusCircle, Search, Calendar, Filter, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Landmark } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useAuth } from "@/components/auth-provider";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { usePaginatedTransactions } from "@/hooks/use-paginated-transactions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,35 +17,74 @@ import { Drawer } from "@/components/ui/drawer";
 import { ConfirmModal } from "@/components/ui/modal";
 import { toast } from "@/lib/toast";
 import {
-  createTransactionFirestore,
-  restoreTransactionFirestore,
-  softDeleteTransactionFirestore,
-} from "@/lib/firestore/company-service";
+  addTransaction as addTransactionDB,
+  restoreTransaction as restoreTransactionDB,
+  softDeleteTransaction as softDeleteTransactionDB,
+} from "@/lib/supabase/company-service";
 import { isDateInClosedPeriod } from "@/lib/accounting";
-import { cn, formatCurrency, formatDate, toInputDate } from "@/lib/utils";
+import { calculateBalanceSheetMemo } from "@/lib/accounting-memoized";
+import { cn, formatCurrency, formatDate, formatNumberInput, parseNumberInput, toInputDate } from "@/lib/utils";
 import { transactionSchema, type TransactionFormValues } from "@/lib/validation";
+import type { Transaction } from "@/lib/types";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 
 export default function TransactionsPage() {
   const { appUser } = useAuth();
+  const accounts = useKasFlowStore((state) => state.accounts);
   const categories = useKasFlowStore((state) => state.categories);
   const cashAccounts = useKasFlowStore((state) => state.cashAccounts);
-  const transactions = useKasFlowStore((state) => state.transactions);
+  const journalEntries = useKasFlowStore((state) => state.journalEntries);
+  const journalEntriesLoaded = useKasFlowStore((state) => state.journalEntriesLoaded);
+  const loadJournalEntries = useKasFlowStore((state) => state.loadJournalEntries);
+  const companyId = useKasFlowStore((state) => state.companyId);
   const accountingPeriods = useKasFlowStore((state) => state.accountingPeriods);
   const addTransaction = useKasFlowStore((state) => state.addTransaction);
   const softDeleteTransaction = useKasFlowStore((state) => state.softDeleteTransaction);
   const restoreTransaction = useKasFlowStore((state) => state.restoreTransaction);
 
+  useEffect(() => {
+    if (companyId && !journalEntriesLoaded) {
+      loadJournalEntries();
+    }
+  }, [companyId, journalEntriesLoaded, loadJournalEntries]);
+
   // UI States
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
   const [filterType, setFilterType] = useState<string>("all");
   const [filterAccount, setFilterAccount] = useState<string>("all");
+  const [filterYear, setFilterYear] = useState<number | undefined>(undefined);
+
+  // Generate year options (current year and 2 years back)
+  const currentYear = new Date().getFullYear();
+  const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
+
+  // Build filters for server-side pagination
+  const paginationFilters = useMemo(() => ({
+    type: filterType === "all" ? undefined : filterType as 'income' | 'expense' | 'transfer' | 'capital',
+    accountId: filterAccount === "all" ? undefined : filterAccount,
+    search: debouncedSearch || undefined,
+    year: filterYear,
+  }), [filterType, filterAccount, debouncedSearch, filterYear]);
+
+  // Pagination
+  const {
+    transactions,
+    loading: paginationLoading,
+    hasMore,
+    fetchNextPage,
+    refresh: refreshTransactions,
+  } = usePaginatedTransactions(
+    appUser?.companyId || "",
+    paginationFilters
+  );
 
   // Delete Confirmation Modal State
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedTxId, setSelectedTxId] = useState<string | null>(null);
   const [selectedTxDate, setSelectedTxDate] = useState<string>("");
+  const [amountDisplay, setAmountDisplay] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const form = useForm<TransactionFormValues>({
@@ -67,6 +108,66 @@ export default function TransactionsPage() {
     [categories, transactionType],
   );
 
+  // Helper function untuk validasi dividen dan prive
+  const validateCapitalTransaction = (capitalType: string, amount: number) => {
+    const balanceSheet = calculateBalanceSheetMemo(journalEntries, accounts, undefined, accountingPeriods);
+    const labaBerjalan = balanceSheet.labaBersihPeriodeBerjalan;
+    const labaDitahan = balanceSheet.labaDitahan;
+    const modalPemilik = balanceSheet.ekuitasDetails.find(e => e.accountCode === "3100")?.balance || 0;
+
+    // Hitung dividen dan prive yang sudah diambil langsung dari transactions (lebih akurat)
+    const currentPeriod = accountingPeriods.find(p => p.status === "open");
+    const periodStart = currentPeriod?.startDate || "1970-01-01";
+    const periodEnd = currentPeriod?.endDate || "2999-12-31";
+
+    const dividenSudahDiambil = transactions
+      .filter(tx =>
+        tx.type === "capital" &&
+        tx.capitalType === "dividen" &&
+        !tx.deletedAt &&
+        tx.date >= periodStart &&
+        tx.date <= periodEnd
+      )
+      .reduce((sum, tx) => sum + tx.amount, 0);
+
+    const priveSudahDiambil = transactions
+      .filter(tx =>
+        tx.type === "capital" &&
+        tx.capitalType === "prive" &&
+        !tx.deletedAt &&
+        tx.date >= periodStart &&
+        tx.date <= periodEnd
+      )
+      .reduce((sum, tx) => sum + tx.amount, 0);
+
+    if (capitalType === "dividen") {
+      const totalLaba = labaBerjalan + labaDitahan;
+      const sisaLaba = totalLaba - dividenSudahDiambil;
+
+      if (amount > sisaLaba) {
+        throw new Error(
+          `Dividen tidak boleh melebihi sisa laba. Sisa laba tersedia: ${formatCurrency(sisaLaba)}`
+        );
+      }
+    }
+
+    if (capitalType === "prive") {
+      const totalLaba = labaBerjalan + labaDitahan;
+      const sisaLaba = totalLaba - priveSudahDiambil - dividenSudahDiambil;
+      const sisaModal = modalPemilik - priveSudahDiambil;
+
+      // Prive bisa dari modal ATAU dari laba (cukup salah satu yang cukup)
+      const bisaDariModal = sisaModal >= amount;
+      const bisaDariLaba = sisaLaba >= amount;
+
+      if (!bisaDariModal && !bisaDariLaba) {
+        throw new Error(
+          `Prive tidak mencukupi. Sisa modal: ${formatCurrency(sisaModal)}, Sisa laba: ${formatCurrency(sisaLaba)}`
+        );
+      }
+    }
+  };
+
   const onSubmit = async (values: TransactionFormValues) => {
     try {
       if (isDateInClosedPeriod(accountingPeriods, values.date)) {
@@ -75,28 +176,70 @@ export default function TransactionsPage() {
         );
       }
 
-      if (appUser) {
-        await createTransactionFirestore({
-          companyId: appUser.companyId,
-          values,
-          categories,
-          cashAccounts,
-        });
-      } else {
-        addTransaction(values);
+      // Validasi untuk transaksi perubahan modal
+      if (values.type === "capital" && values.capitalType) {
+        validateCapitalTransaction(values.capitalType, values.amount);
       }
 
-      toast.success("Transaksi berhasil disimpan dan jurnal otomatis dibuat.");
+      if (appUser) {
+        let result: Transaction;
+        try {
+          result = await addTransactionDB(
+            appUser.companyId,
+            {
+              companyId: appUser.companyId,
+              type: values.type,
+              date: values.date,
+              categoryId: values.categoryId,
+              cashAccountId: values.cashAccountId,
+              sourceAccountId: values.sourceAccountId,
+              destinationAccountId: values.destinationAccountId,
+              amount: values.amount,
+              description: values.description,
+              status: "posted",
+              capitalType: values.capitalType,
+            },
+            categories,
+            cashAccounts,
+            accounts,
+          );
+        } catch (dbError) {
+          // Transaction may have been inserted but journal/audit failed.
+          throw dbError;
+        }
+
+        // Update local state directly so UI responds immediately
+        useKasFlowStore.setState((state) => {
+          // Avoid duplicates — check if already added by realtime sync
+          const exists = state.transactions.some((t) => t.id === result.id);
+          if (exists) return {};
+          return {
+            transactions: [result, ...state.transactions].sort(
+              (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+            ),
+          };
+        });
+
+        toast.success("Transaksi berhasil disimpan dan jurnal otomatis dibuat.");
+      } else {
+        addTransaction(values);
+        toast.success("Transaksi berhasil disimpan.");
+      }
+
       form.reset({
         type: values.type,
         date: toInputDate(),
         amount: 0,
         description: "",
-        categoryId: values.type === "expense" ? "cat_operational" : "cat_sales",
-        cashAccountId: "cash_main",
-        sourceAccountId: "cash_main",
-        destinationAccountId: "bank_bca",
+        categoryId:
+          values.type === "expense"
+            ? categories.find((c) => c.type === "expense")?.id ?? ""
+            : categories.find((c) => c.type === "income")?.id ?? "",
+        cashAccountId: cashAccounts[0]?.id ?? "",
+        sourceAccountId: cashAccounts[0]?.id ?? "",
+        destinationAccountId: cashAccounts[1]?.id ?? cashAccounts[0]?.id ?? "",
       });
+      setAmountDisplay("");
       setIsDrawerOpen(false);
     } catch (error) {
       toast.error(
@@ -122,7 +265,7 @@ export default function TransactionsPage() {
       }
 
       if (appUser) {
-        await softDeleteTransactionFirestore(appUser.companyId, selectedTxId);
+        await softDeleteTransactionDB(appUser.companyId, selectedTxId);
       } else {
         softDeleteTransaction(selectedTxId);
       }
@@ -147,7 +290,7 @@ export default function TransactionsPage() {
       }
 
       if (appUser) {
-        await restoreTransactionFirestore(appUser.companyId, id);
+        await restoreTransactionDB(appUser.companyId, id);
       } else {
         restoreTransaction(id);
       }
@@ -159,34 +302,12 @@ export default function TransactionsPage() {
     }
   };
 
-  // Filtered and searched transactions list
-  const filteredTransactions = useMemo(() => {
-    return transactions
-      .filter((tx) => {
-        // Search description
-        const matchesSearch = tx.description.toLowerCase().includes(searchTerm.toLowerCase());
-
-        // Type filter
-        const matchesType = filterType === "all" || tx.type === filterType;
-
-        // Account filter
-        let matchesAccount = true;
-        if (filterAccount !== "all") {
-          if (tx.type === "transfer") {
-            matchesAccount = tx.sourceAccountId === filterAccount || tx.destinationAccountId === filterAccount;
-          } else {
-            matchesAccount = tx.cashAccountId === filterAccount;
-          }
-        }
-
-        return matchesSearch && matchesType && matchesAccount;
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, searchTerm, filterType, filterAccount]);
+  // Transactions already filtered server-side via usePaginatedTransactions hook
+  const filteredTransactions = transactions;
 
   // Group transactions by date for the timeline view
   const groupedTransactions = useMemo(() => {
-    const groups: Record<string, typeof filteredTransactions> = {};
+    const groups: Record<string, Transaction[]> = {};
     filteredTransactions.forEach((tx) => {
       if (!groups[tx.date]) {
         groups[tx.date] = [];
@@ -200,28 +321,15 @@ export default function TransactionsPage() {
     return Object.keys(groupedTransactions).sort((a, b) => b.localeCompare(a));
   }, [groupedTransactions]);
 
-  // ── Infinite Scroll: load 5 days at a time ──
-  const DAYS_PER_PAGE = 5;
-  const [visibleDays, setVisibleDays] = useState(DAYS_PER_PAGE);
+  // ── Infinite Scroll: fetch more from server ──
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  // Reset visible days when filter/search changes
-  useEffect(() => {
-    setVisibleDays(DAYS_PER_PAGE);
-  }, [searchTerm, filterType, filterAccount]);
-
-  const visibleDates = useMemo(
-    () => sortedDates.slice(0, visibleDays),
-    [sortedDates, visibleDays],
-  );
-
-  const hasMore = visibleDays < sortedDates.length;
-
-  const loadMore = useCallback(() => {
-    if (hasMore) {
-      setVisibleDays((prev) => Math.min(prev + DAYS_PER_PAGE, sortedDates.length));
+  // IntersectionObserver: auto-load when sentinel enters viewport
+  const handleLoadMore = useCallback(() => {
+    if (hasMore && !paginationLoading) {
+      fetchNextPage();
     }
-  }, [hasMore, sortedDates.length]);
+  }, [hasMore, paginationLoading, fetchNextPage]);
 
   // IntersectionObserver: auto-load when sentinel enters viewport
   useEffect(() => {
@@ -229,13 +337,13 @@ export default function TransactionsPage() {
     if (!el) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) loadMore();
+        if (entry.isIntersecting) handleLoadMore();
       },
       { rootMargin: "200px" },
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [loadMore]);
+  }, [handleLoadMore]);
 
 
   return (
@@ -270,14 +378,14 @@ export default function TransactionsPage() {
             <input
               type="text"
               placeholder="Cari deskripsi transaksi..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card pl-9 pr-3 text-xs outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150"
             />
           </div>
 
-          {/* Type and Account Filter */}
-          <div className="flex flex-col sm:flex-row gap-2 sm:min-w-[320px]">
+          {/* Type, Account, and Year Filter */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:min-w-[480px]">
             <div className="flex-1 relative">
               <Filter className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
               <select
@@ -289,6 +397,7 @@ export default function TransactionsPage() {
                 <option value="income">Pemasukan</option>
                 <option value="expense">Pengeluaran</option>
                 <option value="transfer">Transfer</option>
+                <option value="capital">Perubahan Modal</option>
               </select>
             </div>
 
@@ -307,6 +416,22 @@ export default function TransactionsPage() {
                 ))}
               </select>
             </div>
+
+            <div className="flex-1 relative">
+              <Calendar className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <select
+                value={filterYear ?? "all"}
+                onChange={(e) => setFilterYear(e.target.value === "all" ? undefined : parseInt(e.target.value))}
+                className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card pl-8 pr-2 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
+              >
+                <option value="all">Semua Tahun</option>
+                {yearOptions.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -317,7 +442,7 @@ export default function TransactionsPage() {
           {/* Vertical timeline line */}
           <div className="timeline-line" />
 
-          {visibleDates.map((date) => {
+          {sortedDates.map((date) => {
             const dateTransactions = groupedTransactions[date];
             return (
               <div key={date} className="relative mb-6">
@@ -372,102 +497,116 @@ export default function TransactionsPage() {
                         amountColor: "text-blue-600 dark:text-blue-400",
                         prefix: "",
                       },
-                    }[tx.type];
+                      capital: {
+                        icon: Landmark,
+                        bg: "bg-amber-50 dark:bg-amber-500/10",
+                        iconColor: "text-amber-600 dark:text-amber-400",
+                        amountColor: "text-amber-600 dark:text-amber-400",
+                        prefix: "",
+                      },
+                    }[tx.type] ?? {
+                      icon: RotateCcw,
+                      bg: "bg-zinc-50 dark:bg-zinc-500/10",
+                      iconColor: "text-zinc-600 dark:text-zinc-400",
+                      amountColor: "text-zinc-600 dark:text-zinc-400",
+                      prefix: "",
+                    };
 
                     const TypeIcon = typeConfig.icon;
 
                     return (
                       <div key={tx.id} className="relative -ml-8 pl-8">
                         {/* Connector dot on the timeline */}
-                        <div className="absolute left-[11px] top-4 h-2.5 w-2.5 rounded-full bg-white dark:bg-zinc-800 border-2 border-emerald-300 dark:border-emerald-600 z-10" />
+                        <div className={cn(
+                          "absolute left-[11px] top-4 h-2.5 w-2.5 rounded-full z-10 border-2",
+                          isDeleted
+                            ? "bg-red-100 dark:bg-red-900 border-red-300 dark:border-red-600"
+                            : "bg-white dark:bg-zinc-800 border-emerald-300 dark:border-emerald-600"
+                        )} />
 
                         {/* Transaction Card */}
-                        <Card className={cn(
-                          "border-zinc-200/60 dark:border-zinc-800/50 shadow-sm p-3.5",
-                          isDeleted && "opacity-50"
-                        )}>
-                          <div className="flex items-center justify-between gap-3">
+                        <Card className="border-zinc-200/60 dark:border-zinc-800/50 shadow-sm p-3.5">
+                          <div className="flex items-start justify-between gap-3">
                             {/* Left: Icon + Info */}
                             <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className={cn("p-2 rounded-xl shrink-0", typeConfig.bg)}>
-                                <TypeIcon className={cn("h-4 w-4", typeConfig.iconColor)} />
+                              <div className={cn(
+                                "p-2 rounded-xl shrink-0",
+                                isDeleted ? "bg-zinc-100 dark:bg-zinc-800" : typeConfig.bg
+                              )}>
+                                <TypeIcon className={cn(
+                                  "h-4 w-4",
+                                  isDeleted ? "text-zinc-400 dark:text-zinc-500" : typeConfig.iconColor
+                                )} />
                               </div>
                               <div className="min-w-0 space-y-0.5">
                                 <p className={cn(
-                                  "text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate leading-snug",
-                                  isDeleted && "line-through text-muted-foreground"
+                                  "text-xs font-semibold truncate leading-snug",
+                                  isDeleted
+                                    ? "line-through text-zinc-400 dark:text-zinc-500"
+                                    : "text-zinc-800 dark:text-zinc-200"
                                 )}>
                                   {tx.description}
                                 </p>
-                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground font-medium">
+                                <div className={cn(
+                                  "flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-medium",
+                                  isDeleted ? "text-zinc-400 dark:text-zinc-600" : "text-muted-foreground"
+                                )}>
                                   <span>{accountName}</span>
-                                  {categoryName && (
+                                  {tx.type === "capital" && tx.capitalType ? (
+                                    <>
+                                      <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                                      <span className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800/80 rounded-md">
+                                        {tx.capitalType === "setoran" ? "Setoran Modal" :
+                                         tx.capitalType === "dividen" ? "Dividen" : "Prive"}
+                                      </span>
+                                    </>
+                                  ) : categoryName ? (
                                     <>
                                       <span className="text-zinc-300 dark:text-zinc-700">•</span>
                                       <span className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800/80 rounded-md">
                                         {categoryName}
                                       </span>
                                     </>
-                                  )}
+                                  ) : null}
                                 </div>
                               </div>
                             </div>
 
-                            {/* Right: Amount + Actions */}
-                            <div className="flex flex-col items-end gap-1 shrink-0">
-                              <p className={cn("text-xs font-bold leading-none tracking-tight", typeConfig.amountColor)}>
+                            {/* Right: Amount (top) + Badge & Action (below, aligned with account row) */}
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              {/* Amount */}
+                              <p className={cn(
+                                "text-xs font-bold leading-none tracking-tight",
+                                isDeleted
+                                  ? "line-through text-zinc-400 dark:text-zinc-500"
+                                  : typeConfig.amountColor
+                              )}>
                                 {typeConfig.prefix}{formatCurrency(tx.amount)}
                               </p>
-
-                              {/* Mobile: always-visible action button */}
-                              <div className="lg:hidden">
+                              {/* Badge + Action — aligned with account name row */}
+                              <div className="flex items-center gap-1.5">
+                                {isDeleted ? (
+                                  <Badge tone="red">Deleted</Badge>
+                                ) : (
+                                  <Badge tone="green">Posted</Badge>
+                                )}
                                 {isDeleted ? (
                                   <button
                                     onClick={() => handleRestore(tx.id, tx.date)}
-                                    className="p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-600 rounded-md transition"
+                                    className="flex h-6 w-6 items-center justify-center rounded-md border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition duration-150"
                                     title="Pulihkan Transaksi"
                                   >
-                                    <RotateCcw className="h-3.5 w-3.5" />
+                                    <RotateCcw className="h-3 w-3" />
                                   </button>
                                 ) : (
                                   <button
                                     onClick={() => openDeleteConfirmation(tx.id, tx.date)}
-                                    className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/30 text-rose-600 rounded-md transition"
-                                    title="Hapus Transaksi"
+                                    className="flex h-6 w-6 items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500 hover:border-red-200 hover:bg-red-50 hover:text-red-500 dark:hover:border-red-500/20 dark:hover:bg-red-500/10 dark:hover:text-red-400 transition duration-150"
+                                    title="Soft Delete"
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <Trash2 className="h-3 w-3" />
                                   </button>
                                 )}
-                              </div>
-
-                              {/* Desktop: hover-reveal badge + actions */}
-                              <div className="hidden lg:block h-5 relative">
-                                <div className="transition-opacity duration-200 group-hover:opacity-0 flex items-center justify-end">
-                                  {isDeleted ? (
-                                    <Badge tone="red">Deleted</Badge>
-                                  ) : (
-                                    <Badge tone="green">Posted</Badge>
-                                  )}
-                                </div>
-                                <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-1 bg-gradient-to-l from-card pl-4">
-                                  {isDeleted ? (
-                                    <button
-                                      onClick={() => handleRestore(tx.id, tx.date)}
-                                      className="p-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-600 rounded-md transition"
-                                      title="Pulihkan Transaksi"
-                                    >
-                                      <RotateCcw className="h-3.5 w-3.5" />
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => openDeleteConfirmation(tx.id, tx.date)}
-                                      className="p-1 hover:bg-red-50 dark:hover:bg-red-950/30 text-rose-600 rounded-md transition"
-                                      title="Hapus Transaksi"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </button>
-                                  )}
-                                </div>
                               </div>
                             </div>
                           </div>
@@ -485,24 +624,25 @@ export default function TransactionsPage() {
             <div ref={loadMoreRef} className="flex flex-col items-center gap-3 py-6 -ml-8">
               <div className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
                 <div className="h-px w-8 bg-zinc-200 dark:bg-zinc-800" />
-                Menampilkan {visibleDates.length} dari {sortedDates.length} hari
+                Menampilkan {transactions.length} transaksi
                 <div className="h-px w-8 bg-zinc-200 dark:bg-zinc-800" />
               </div>
               <button
-                onClick={loadMore}
-                className="px-5 py-2 rounded-full bg-zinc-100 dark:bg-zinc-800/80 text-xs font-semibold text-foreground hover:bg-zinc-200 dark:hover:bg-zinc-700 transition duration-200 active:scale-95 border border-zinc-200/60 dark:border-zinc-700/50"
+                onClick={fetchNextPage}
+                disabled={paginationLoading}
+                className="px-5 py-2 rounded-full bg-zinc-100 dark:bg-zinc-800/80 text-xs font-semibold text-foreground hover:bg-zinc-200 dark:hover:bg-zinc-700 transition duration-200 active:scale-95 border border-zinc-200/60 dark:border-zinc-700/50 disabled:opacity-50"
               >
-                Muat lebih lama ↓
+                {paginationLoading ? 'Memuat...' : 'Muat lebih lama ↓'}
               </button>
             </div>
           )}
 
           {/* Show "all loaded" when everything is visible */}
-          {!hasMore && sortedDates.length > DAYS_PER_PAGE && (
+          {!hasMore && transactions.length > 0 && (
             <div className="flex items-center justify-center gap-2 py-5 -ml-8">
               <div className="h-px w-10 bg-zinc-200 dark:bg-zinc-800" />
               <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                Semua transaksi ditampilkan
+                Semua transaksi ditampilkan ({transactions.length} transaksi)
               </span>
               <div className="h-px w-10 bg-zinc-200 dark:bg-zinc-800" />
             </div>
@@ -551,6 +691,7 @@ export default function TransactionsPage() {
               <option value="income">Pemasukan Kas</option>
               <option value="expense">Pengeluaran Kas</option>
               <option value="transfer">Transfer Antar Bank</option>
+              <option value="capital">Perubahan Modal</option>
             </select>
           </div>
 
@@ -566,7 +707,7 @@ export default function TransactionsPage() {
           </div>
 
           {/* Conditional Input based on Transaction Type */}
-          {transactionType !== "transfer" ? (
+          {(transactionType === "income" || transactionType === "expense") && (
             <>
               {/* Category */}
               <div className="space-y-1">
@@ -601,7 +742,9 @@ export default function TransactionsPage() {
                 </select>
               </div>
             </>
-          ) : (
+          )}
+
+          {transactionType === "transfer" && (
             <div className="grid grid-cols-2 gap-3">
               {/* Source Cash Account */}
               <div className="space-y-1">
@@ -638,6 +781,43 @@ export default function TransactionsPage() {
             </div>
           )}
 
+          {transactionType === "capital" && (
+            <>
+              {/* Capital Type */}
+              <div className="space-y-1">
+                <Label htmlFor="capitalType">Jenis Perubahan Modal</Label>
+                <select
+                  id="capitalType"
+                  {...form.register("capitalType")}
+                  className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-805 bg-card px-3 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
+                >
+                  <option value="">— Pilih jenis —</option>
+                  <option value="setoran">Setoran Modal (kas masuk)</option>
+                  <option value="prive">Prive (kas keluar)</option>
+                  <option value="dividen">Dividen (kas keluar)</option>
+                </select>
+                {form.formState.errors.capitalType && <p className="text-[10px] font-bold text-red-500">{form.formState.errors.capitalType.message}</p>}
+              </div>
+
+              {/* Cash Account */}
+              <div className="space-y-1">
+                <Label htmlFor="cashAccountId">Akun Kas</Label>
+                <select
+                  id="cashAccountId"
+                  {...form.register("cashAccountId")}
+                  className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-805 bg-card px-3 text-xs font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150 appearance-none"
+                >
+                  {cashAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+                {form.formState.errors.cashAccountId && <p className="text-[10px] font-bold text-red-500">{form.formState.errors.cashAccountId.message}</p>}
+              </div>
+            </>
+          )}
+
           {/* Nominal */}
           <div className="space-y-1">
             <Label htmlFor="amount">Nominal Uang (Rp)</Label>
@@ -645,10 +825,16 @@ export default function TransactionsPage() {
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground/60 select-none">IDR</span>
               <input
                 id="amount"
-                type="number"
-                min="0"
-                step="1000"
-                {...form.register("amount", { valueAsNumber: true })}
+                type="text"
+                inputMode="numeric"
+                placeholder="0"
+                value={amountDisplay}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^0-9]/g, "");
+                  const num = raw ? parseInt(raw, 10) : 0;
+                  setAmountDisplay(num ? formatNumberInput(num) : "");
+                  form.setValue("amount", num, { shouldValidate: true });
+                }}
                 className="h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-805 bg-card pl-10 pr-3 text-xs outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition duration-150"
               />
             </div>

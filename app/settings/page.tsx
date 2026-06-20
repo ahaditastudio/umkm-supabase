@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,11 +14,12 @@ import {
 } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { isFirebaseConfigured } from "@/lib/firebase";
-import { updateBusinessProfileFirestore } from "@/lib/firestore/company-service";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { updateBusinessProfile } from "@/lib/supabase/company-service";
+import { toast } from "@/lib/toast";
 import { formatDate } from "@/lib/utils";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
-import { Settings, Shield, HelpCircle, Calendar, Users2, Database, ShieldAlert, Award } from "lucide-react";
+import { Settings, Shield, HelpCircle, Calendar, Users2, Database, ShieldAlert, Award, Save, Loader2 } from "lucide-react";
 
 export default function SettingsPage() {
   const { appUser } = useAuth();
@@ -25,13 +27,51 @@ export default function SettingsPage() {
   const updateProfile = useKasFlowStore((state) => state.updateProfile);
   const accountingPeriods = useKasFlowStore((state) => state.accountingPeriods);
 
-  const persistProfile = async (partialProfile: Partial<typeof profile>) => {
-    updateProfile(partialProfile);
-    if (appUser)
-      await updateBusinessProfileFirestore(appUser.companyId, {
-        ...profile,
-        ...partialProfile,
-      });
+  // Local form state
+  const [formName, setFormName] = useState(profile.businessName);
+  const [formOwner, setFormOwner] = useState(profile.ownerName);
+  const [formType, setFormType] = useState(profile.businessType);
+  const [formTax, setFormTax] = useState(profile.taxNumber ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const isDirty =
+    formName !== profile.businessName ||
+    formOwner !== profile.ownerName ||
+    formType !== profile.businessType ||
+    formTax !== (profile.taxNumber ?? "");
+
+  const handleSave = async () => {
+    if (!formName.trim() || !formOwner.trim()) {
+      toast.error("Nama perusahaan dan pemilik wajib diisi.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const updates = {
+        businessName: formName.trim(),
+        ownerName: formOwner.trim(),
+        businessType: formType as typeof profile.businessType,
+        taxNumber: formTax.trim(),
+      };
+      updateProfile(updates);
+      if (appUser) {
+        await updateBusinessProfile(appUser.companyId, { ...profile, ...updates });
+      }
+      toast.success("Profil badan usaha berhasil diperbarui.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Gagal memperbarui profil.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    setFormName(profile.businessName);
+    setFormOwner(profile.ownerName);
+    setFormType(profile.businessType);
+    setFormTax(profile.taxNumber ?? "");
   };
 
   return (
@@ -62,59 +102,77 @@ export default function SettingsPage() {
                 Informasi identitas bisnis yang akan dicetak pada invoice dan laporan formal.
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-5 sm:grid-cols-2 mt-2">
-              <div className="space-y-1">
-                <Label htmlFor="bizName">Nama Perusahaan / Toko</Label>
-                <Input
-                  id="bizName"
-                  value={profile.businessName}
-                  onChange={(event) =>
-                    persistProfile({ businessName: event.target.value })
-                  }
-                  className="h-9.5 text-xs"
-                />
+            <CardContent className="space-y-5 mt-2">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="bizName">Nama Perusahaan / Toko</Label>
+                  <Input
+                    id="bizName"
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    className="h-9.5 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="ownerName">Nama Pemilik (Owner)</Label>
+                  <Input
+                    id="ownerName"
+                    value={formOwner}
+                    onChange={(e) => setFormOwner(e.target.value)}
+                    className="h-9.5 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="bizType">Jenis Sektor Usaha</Label>
+                  <Select
+                    id="bizType"
+                    value={formType}
+                    onChange={(e) => setFormType(e.target.value as any)}
+                    className="h-9.5 text-xs"
+                  >
+                    <option value="retail">Retail (Jual Beli)</option>
+                    <option value="service">Service (Jasa)</option>
+                    <option value="online_shop">Online Shop (Dagang)</option>
+                    <option value="distributor">Distributor / Logistik</option>
+                    <option value="freelancer">Freelancer / Mandiri</option>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="taxNum">Nomor Pokok Wajib Pajak (NPWP)</Label>
+                  <Input
+                    id="taxNum"
+                    value={formTax}
+                    onChange={(e) => setFormTax(e.target.value)}
+                    placeholder="Masukkan NPWP/NIK bisnis"
+                    className="h-9.5 text-xs"
+                  />
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="ownerName">Nama Pemilik (Owner)</Label>
-                <Input
-                  id="ownerName"
-                  value={profile.ownerName}
-                  onChange={(event) =>
-                    persistProfile({ ownerName: event.target.value })
-                  }
-                  className="h-9.5 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="bizType">Jenis Sektor Usaha</Label>
-                <Select
-                  id="bizType"
-                  value={profile.businessType}
-                  onChange={(event) =>
-                    persistProfile({
-                      businessType: event.target.value as any,
-                    })
-                  }
-                  className="h-9.5 text-xs"
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800/50">
+                <Button
+                  onClick={handleSave}
+                  disabled={!isDirty || saving}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs h-9 gap-1.5"
                 >
-                  <option value="retail">Retail (Jual Beli)</option>
-                  <option value="service">Service (Jasa)</option>
-                  <option value="online_shop">Online Shop (Dagang)</option>
-                  <option value="distributor">Distributor / Logistik</option>
-                  <option value="freelancer">Freelancer / Mandiri</option>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="taxNum">Nomor Pokok Wajib Pajak (NPWP)</Label>
-                <Input
-                  id="taxNum"
-                  value={profile.taxNumber ?? ""}
-                  onChange={(event) =>
-                    persistProfile({ taxNumber: event.target.value })
-                  }
-                  placeholder="Masukkan NPWP/NIK bisnis"
-                  className="h-9.5 text-xs"
-                />
+                  {saving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5" />
+                  )}
+                  Simpan Perubahan
+                </Button>
+                {isDirty && (
+                  <Button
+                    variant="outline"
+                    onClick={handleReset}
+                    disabled={saving}
+                    className="text-xs font-semibold h-9"
+                  >
+                    Batal
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -167,18 +225,18 @@ export default function SettingsPage() {
               <CardTitle className="flex items-center gap-2">
                 <Database className="h-4 w-4 text-emerald-500" /> Integrasi Cloud Server
               </CardTitle>
-              <CardDescription>Sinkronisasi data ke cloud server Firebase.</CardDescription>
+              <CardDescription>Sinkronisasi data ke cloud server Supabase.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 mt-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground uppercase">Status Koneksi:</span>
-                <Badge tone={isFirebaseConfigured ? "green" : "yellow"}>
-                  {isFirebaseConfigured ? "Firebase Active" : "Local Database"}
+                <Badge tone={isSupabaseConfigured ? "green" : "yellow"}>
+                  {isSupabaseConfigured ? "Supabase Active" : "Local Database"}
                 </Badge>
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                {isFirebaseConfigured
-                  ? "Seluruh data transaksi dan jurnal tersimpan dengan aman pada database Firestore terenkripsi."
+                {isSupabaseConfigured
+                  ? "Seluruh data transaksi dan jurnal tersimpan dengan aman pada database PostgreSQL Supabase terenkripsi."
                   : "Anda berjalan pada mode local storage. Harap konfigurasikan file env jika ingin menggunakan server cloud."}
               </p>
             </CardContent>

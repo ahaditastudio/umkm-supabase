@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Lock, PlusCircle, Pencil, BookOpen, Layers, ShieldCheck, History, CalendarDays } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,15 +26,15 @@ import {
   TableRow,
 } from "@/components/ui/data-table";
 import {
-  addAccountFirestore,
-  addAccountingPeriodFirestore,
-  closeCurrentPeriodFirestore,
-  createOpeningBalanceFirestore,
-  updateAccountFirestore,
-  updateAccountingPeriodFirestore,
-} from "@/lib/firestore/company-service";
+  addAccount as addAccountDB,
+  addAccountingPeriod as addAccountingPeriodDB,
+  closeAccountingPeriod,
+  createOpeningBalance as createOpeningBalanceDB,
+  updateAccount as updateAccountDB,
+  updateAccountingPeriod as updateAccountingPeriodDB,
+} from "@/lib/supabase/company-service";
 import type { AccountType, NormalBalance } from "@/lib/types";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatNumberInput } from "@/lib/utils";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +44,9 @@ export default function AccountingPage() {
   const { appUser } = useAuth();
   const accounts = useKasFlowStore((state) => state.accounts);
   const journalEntries = useKasFlowStore((state) => state.journalEntries);
+  const journalEntriesLoaded = useKasFlowStore((state) => state.journalEntriesLoaded);
+  const loadJournalEntries = useKasFlowStore((state) => state.loadJournalEntries);
+  const companyId = useKasFlowStore((state) => state.companyId);
   const ledgerEntries = useKasFlowStore((state) => state.ledgerEntries);
   const accountingPeriods = useKasFlowStore((state) => state.accountingPeriods);
   const auditLogs = useKasFlowStore((state) => state.auditLogs);
@@ -53,6 +56,13 @@ export default function AccountingPage() {
   const addAccountingPeriod = useKasFlowStore((state) => state.addAccountingPeriod);
   const updateAccount = useKasFlowStore((state) => state.updateAccount);
   const updateAccountingPeriod = useKasFlowStore((state) => state.updateAccountingPeriod);
+
+  // Load journal entries when page mounts (lazy loading)
+  useEffect(() => {
+    if (companyId && !journalEntriesLoaded) {
+      loadJournalEntries();
+    }
+  }, [companyId, journalEntriesLoaded, loadJournalEntries]);
 
   // Active Tab State
   const [activeTab, setActiveTab] = useState<TabType>("journal_ledger");
@@ -88,13 +98,13 @@ export default function AccountingPage() {
     () => ledgerEntries.filter((entry) => entry.accountId === selectedAccountId),
     [ledgerEntries, selectedAccountId],
   );
-  const currentPeriod = accountingPeriods[0];
+  const currentPeriod = accountingPeriods[0] || null;
 
   const handleOpeningBalance = async () => {
     if (!openingAmount) return toast.error("Nominal saldo awal wajib diisi.");
     try {
       if (appUser) {
-        await createOpeningBalanceFirestore(
+        await createOpeningBalanceDB(
           appUser.companyId,
           selectedAccountId,
           openingAmount,
@@ -115,8 +125,11 @@ export default function AccountingPage() {
       if (confirmation !== "TUTUP BUKU") {
         throw new Error("Konfirmasi harus mengetik TUTUP BUKU.");
       }
+      if (!currentPeriod) {
+        throw new Error("Tidak ada periode akuntansi yang aktif.");
+      }
       if (appUser) {
-        await closeCurrentPeriodFirestore(
+        await closeAccountingPeriod(
           appUser.companyId,
           currentPeriod.id,
           currentPeriod.startDate,
@@ -144,7 +157,7 @@ export default function AccountingPage() {
       if (editingAccountId) {
         // Edit mode
         if (appUser) {
-          await updateAccountFirestore(
+          await updateAccountDB(
             appUser.companyId,
             editingAccountId,
             {
@@ -166,12 +179,14 @@ export default function AccountingPage() {
       } else {
         // Create mode
         if (appUser) {
-          await addAccountFirestore(
+          await addAccountDB(
             appUser.companyId,
-            newAccountCode.trim(),
-            newAccountName.trim(),
-            newAccountType,
-            newAccountNormalBalance,
+            {
+              code: newAccountCode.trim(),
+              name: newAccountName.trim(),
+              type: newAccountType,
+              normalBalance: newAccountNormalBalance,
+            },
           );
         }
         addAccount(
@@ -231,10 +246,10 @@ export default function AccountingPage() {
     setEditPeriodLoading(true);
     try {
       if (appUser) {
-        await updateAccountingPeriodFirestore(
+        await updateAccountingPeriodDB(
           appUser.companyId,
           editingPeriodId,
-          { startDate: editPeriodStartDate, endDate: editPeriodEndDate },
+          { start_date: editPeriodStartDate, end_date: editPeriodEndDate },
         );
       }
       updateAccountingPeriod(editingPeriodId, {
@@ -262,10 +277,18 @@ export default function AccountingPage() {
       toast.error("Tanggal mulai harus lebih awal dari tanggal akhir.");
       return;
     }
+    // Check for duplicate/overlapping periods
+    const overlaps = accountingPeriods.some(
+      (p) => p.startDate <= periodEndDate && p.endDate >= periodStartDate,
+    );
+    if (overlaps) {
+      toast.error("Periode baru tumpang tindih dengan periode yang sudah ada.");
+      return;
+    }
     setAddPeriodLoading(true);
     try {
       if (appUser) {
-        await addAccountingPeriodFirestore(
+        await addAccountingPeriodDB(
           appUser.companyId,
           periodStartDate,
           periodEndDate,
@@ -307,7 +330,7 @@ export default function AccountingPage() {
             "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "journal_ledger"
               ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
-              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-white/[0.06] dark:hover:bg-white/[0.10] dark:border dark:border-white/[0.08] lg:bg-transparent lg:dark:bg-transparent lg:dark:border-0"
           )}
         >
           <span className="flex items-center gap-2">
@@ -320,7 +343,7 @@ export default function AccountingPage() {
             "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "period_setup"
               ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
-              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-white/[0.06] dark:hover:bg-white/[0.10] dark:border dark:border-white/[0.08] lg:bg-transparent lg:dark:bg-transparent lg:dark:border-0"
           )}
         >
           <span className="flex items-center gap-2">
@@ -333,7 +356,7 @@ export default function AccountingPage() {
             "shrink-0 px-3.5 py-2 text-xs font-semibold tracking-wider transition rounded-full lg:rounded-none lg:pb-3.5 lg:px-0 lg:uppercase",
             activeTab === "coa"
               ? "bg-emerald-500 text-white lg:bg-transparent lg:text-primary lg:border-b-2 lg:border-primary"
-              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-zinc-800 lg:bg-transparent"
+              : "text-muted-foreground hover:text-foreground bg-zinc-100 dark:bg-white/[0.06] dark:hover:bg-white/[0.10] dark:border dark:border-white/[0.08] lg:bg-transparent lg:dark:bg-transparent lg:dark:border-0"
           )}
         >
           <span className="flex items-center gap-2">
@@ -514,39 +537,50 @@ export default function AccountingPage() {
                 <CardDescription>Mengunci transaksi pada rentang periode ini.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="rounded-xl border bg-zinc-50/50 p-4 text-xs space-y-2 dark:bg-zinc-900/10">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Tanggal Mulai:</span>
-                    <span className="font-semibold text-foreground">{formatDate(currentPeriod.startDate)}</span>
+                {currentPeriod ? (
+                  <>
+                    <div className="rounded-xl border bg-zinc-50/50 p-4 text-xs space-y-2 dark:bg-zinc-900/10">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Tanggal Mulai:</span>
+                        <span className="font-semibold text-foreground">{formatDate(currentPeriod.startDate)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Tanggal Selesai:</span>
+                        <span className="font-semibold text-foreground">{formatDate(currentPeriod.endDate)}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-1">
+                        <span className="text-muted-foreground">Status:</span>
+                        <Badge tone={currentPeriod.status === "open" ? "green" : "red"}>
+                          {currentPeriod.status}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirmCode">Ketik konfirmasi tutup buku</Label>
+                      <Input
+                        id="confirmCode"
+                        value={confirmation}
+                        onChange={(event) => setConfirmation(event.target.value)}
+                        placeholder="Ketik TUTUP BUKU"
+                        className="h-9.5 text-xs"
+                      />
+                    </div>
+                    <Button
+                      className="w-full bg-rose-600 hover:bg-rose-550 text-white font-semibold text-xs tracking-wide h-9.5"
+                      onClick={handleClosing}
+                      disabled={currentPeriod.status === "closed"}
+                    >
+                      Proses Tutup Buku
+                    </Button>
+                  </>
+                ) : (
+                  <div className="rounded-xl border bg-amber-50 p-4 text-xs text-amber-700 dark:bg-amber-950/20 dark:text-amber-400">
+                    <p className="font-semibold mb-1">⚠️ Tidak Ada Periode Aktif</p>
+                    <p className="text-muted-foreground">
+                      Tidak ada periode akuntansi yang aktif. Buat periode baru terlebih dahulu di bawah.
+                    </p>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Tanggal Selesai:</span>
-                    <span className="font-semibold text-foreground">{formatDate(currentPeriod.endDate)}</span>
-                  </div>
-                  <div className="flex justify-between items-center pt-1">
-                    <span className="text-muted-foreground">Status:</span>
-                    <Badge tone={currentPeriod.status === "open" ? "green" : "red"}>
-                      {currentPeriod.status}
-                    </Badge>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirmCode">Ketik konfirmasi tutup buku</Label>
-                  <Input
-                    id="confirmCode"
-                    value={confirmation}
-                    onChange={(event) => setConfirmation(event.target.value)}
-                    placeholder="Ketik TUTUP BUKU"
-                    className="h-9.5 text-xs"
-                  />
-                </div>
-                <Button
-                  className="w-full bg-rose-600 hover:bg-rose-550 text-white font-semibold text-xs tracking-wide h-9.5"
-                  onClick={handleClosing}
-                  disabled={currentPeriod.status === "closed"}
-                >
-                  Proses Tutup Buku
-                </Button>
+                )}
               </CardContent>
             </Card>
 
@@ -587,9 +621,14 @@ export default function AccountingPage() {
                 <div className="space-y-1">
                   <Label>Nominal Saldo (Rp)</Label>
                   <Input
-                    type="number"
-                    value={openingAmount || ""}
-                    onChange={(event) => setOpeningAmount(Number(event.target.value))}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="0"
+                    value={openingAmount ? formatNumberInput(openingAmount) : ""}
+                    onChange={(event) => {
+                      const raw = event.target.value.replace(/[^0-9]/g, "");
+                      setOpeningAmount(raw ? parseInt(raw, 10) : 0);
+                    }}
                     className="h-9.5 text-xs"
                   />
                 </div>
@@ -759,61 +798,80 @@ export default function AccountingPage() {
                 </CardHeader>
                 <CardContent className="p-0">
                   <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/50 scrollbar-thin">
-                    {accountingPeriods.map((period) => (
-                      <div key={period.id} className="flex items-center justify-between p-3.5 transition hover:bg-zinc-50/30 dark:hover:bg-zinc-800/10">
-                        {editingPeriodId === period.id ? (
-                          <div className="flex items-center gap-2 w-full">
-                            <Input
-                              type="date"
-                              value={editPeriodStartDate}
-                              onChange={(e) => setEditPeriodStartDate(e.target.value)}
-                              className="h-8 text-xs flex-1"
-                            />
-                            <span className="text-xs text-muted-foreground">—</span>
-                            <Input
-                              type="date"
-                              value={editPeriodEndDate}
-                              onChange={(e) => setEditPeriodEndDate(e.target.value)}
-                              className="h-8 text-xs flex-1"
-                            />
-                            <Button
-                              onClick={handleUpdatePeriod}
-                              disabled={editPeriodLoading}
-                              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-8 px-3 shrink-0"
-                            >
-                              {editPeriodLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Simpan"}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => setEditingPeriodId(null)}
-                              className="text-xs h-8 px-3 shrink-0"
-                            >
-                              Batal
-                            </Button>
-                          </div>
-                        ) : (
-                          <>
-                            <span className="font-semibold text-xs text-zinc-800 dark:text-zinc-200">
-                              {formatDate(period.startDate)} — {formatDate(period.endDate)}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              {period.status === "open" && (
+                    {accountingPeriods.length ? (
+                      accountingPeriods.map((period) => (
+                        <div key={period.id} className="p-3.5">
+                          {editingPeriodId === period.id ? (
+                            /* ── Edit Mode: proper card layout ── */
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Edit Periode</span>
                                 <button
-                                  onClick={() => openEditPeriod(period.id)}
-                                  className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
-                                  title="Edit Periode"
+                                  onClick={() => setEditingPeriodId(null)}
+                                  className="text-[10px] font-semibold text-zinc-400 hover:text-foreground transition"
                                 >
-                                  <Pencil className="h-3.5 w-3.5" />
+                                  ✕ Batal
                                 </button>
-                              )}
-                              <Badge tone={period.status === "open" ? "green" : "red"}>
-                                {period.status}
-                              </Badge>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] font-semibold text-muted-foreground">Mulai</Label>
+                                  <Input
+                                    type="date"
+                                    value={editPeriodStartDate}
+                                    onChange={(e) => setEditPeriodStartDate(e.target.value)}
+                                    className="h-8 text-xs"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] font-semibold text-muted-foreground">Selesai</Label>
+                                  <Input
+                                    type="date"
+                                    value={editPeriodEndDate}
+                                    onChange={(e) => setEditPeriodEndDate(e.target.value)}
+                                    className="h-8 text-xs"
+                                  />
+                                </div>
+                              </div>
+                              <Button
+                                onClick={handleUpdatePeriod}
+                                disabled={editPeriodLoading}
+                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-8"
+                              >
+                                {editPeriodLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Simpan Perubahan"}
+                              </Button>
                             </div>
-                          </>
-                        )}
+                          ) : (
+                            /* ── View Mode ── */
+                            <div className="flex items-center justify-between">
+                              <div className="space-y-0.5">
+                                <span className="font-semibold text-xs text-zinc-800 dark:text-zinc-200">
+                                  {formatDate(period.startDate)} — {formatDate(period.endDate)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {period.status === "open" && (
+                                  <button
+                                    onClick={() => openEditPeriod(period.id)}
+                                    className="p-1 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 rounded-md transition"
+                                    title="Edit Periode"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                <Badge tone={period.status === "open" ? "green" : "red"}>
+                                  {period.status}
+                                </Badge>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-6">
+                        <EmptyState title="Belum ada periode" description="Buat periode akuntansi pertama Anda melalui form di samping." />
                       </div>
-                    ))}
+                    )}
                   </div>
                 </CardContent>
               </Card>

@@ -15,8 +15,8 @@ const config: Config = {
         sans: ["var(--font-plus-jakarta-sans)", ...defaultTheme.fontFamily.sans],
       },
       spacing: {
-        "8.5": "2.125rem", // 34px
-        "9.5": "2.375rem", // 38px
+        "8.5": "2.125rem",
+        "9.5": "2.375rem",
         "safe-top": "env(safe-area-inset-top, 0px)",
         "safe-bottom": "env(safe-area-inset-bottom, 0px)",
         "safe-left": "env(safe-area-inset-left, 0px)",
@@ -41,9 +41,23 @@ const config: Config = {
         "primary-foreground": "hsl(var(--primary-foreground))",
         destructive: "hsl(var(--destructive))",
         "destructive-foreground": "hsl(var(--destructive-foreground))",
+        accent: "hsl(var(--accent))",
+        "accent-foreground": "hsl(var(--accent-foreground))",
       },
       boxShadow: {
-        soft: "0 10px 30px -18px rgb(15 23 42 / 0.08)", // Redesigned to be lighter
+        soft: "0 10px 30px -18px rgb(15 23 42 / 0.08)",
+        card: "0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)",
+        "card-hover": "0 4px 20px -4px rgba(0,0,0,0.08), 0 2px 6px -2px rgba(0,0,0,0.04)",
+        dropdown: "0 8px 32px -8px rgba(0,0,0,0.12)",
+      },
+      keyframes: {
+        "fade-in-up": {
+          "0%": { opacity: "0", transform: "translateY(8px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        "fade-in-up": "fade-in-up 0.3s ease-out",
       },
     },
   },

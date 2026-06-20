@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const transactionSchema = z
   .object({
-    type: z.enum(["income", "expense", "transfer"]),
+    type: z.enum(["income", "expense", "transfer", "capital"]),
     date: z.string().min(1, "Tanggal wajib diisi"),
     categoryId: z.string().optional(),
     cashAccountId: z.string().optional(),
@@ -10,6 +10,7 @@ export const transactionSchema = z
     destinationAccountId: z.string().optional(),
     amount: z.number().positive("Nominal harus lebih dari 0"),
     description: z.string().min(3, "Deskripsi minimal 3 karakter"),
+    capitalType: z.enum(["setoran", "prive", "dividen"]).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.type === "transfer") {
@@ -36,6 +37,21 @@ export const transactionSchema = z
           code: "custom",
           path: ["destinationAccountId"],
           message: "Akun tujuan harus berbeda",
+        });
+      }
+    } else if (value.type === "capital") {
+      if (!value.cashAccountId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["cashAccountId"],
+          message: "Akun kas wajib diisi",
+        });
+      }
+      if (!value.capitalType) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["capitalType"],
+          message: "Jenis modal wajib dipilih",
         });
       }
     } else {
