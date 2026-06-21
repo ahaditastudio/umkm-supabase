@@ -281,7 +281,7 @@ export type MarketplaceMappingType =
 export type MarketplaceSettlementStatus = "settled" | "unsettled" | "processing" | "failed";
 export type MarketplaceOrderSyncStatus = "pending" | "synced" | "error" | "skipped";
 export type MarketplacePaymentStatus = "PAID" | "FAILED" | "PROCESSING";
-export type MarketplaceSyncType = "orders" | "statements" | "unsettled" | "full" | "backfill";
+export type MarketplaceSyncType = "orders" | "statements" | "unsettled" | "full" | "backfill" | "incremental";
 export type MarketplaceSyncLogStatus = "running" | "success" | "error" | "partial";
 
 export type MarketplaceConnection = {

@@ -22,6 +22,8 @@ export type SyncOrdersParams = {
   endDate?: string; // ISO date string
   /** Order statuses to fetch. Default: all operational + final statuses. */
   statuses?: string[];
+  /** Filter by update_time instead of create_time. Useful for catching status changes. Default: true */
+  useUpdateTime?: boolean;
 };
 
 /** Statuses to sync — operational tracking + final revenue + cancellations */
@@ -155,6 +157,7 @@ async function fetchOrderDetail(
  * upserting to database and handling deduplication.
  *
  * Now fetches all operational + final statuses, not just COMPLETED.
+ * Filter by create_time to get orders created within the date range.
  */
 export async function syncOrders(params: SyncOrdersParams): Promise<SyncOrdersResult> {
   const {
@@ -165,6 +168,7 @@ export async function syncOrders(params: SyncOrdersParams): Promise<SyncOrdersRe
     companyId,
     connectionId,
     startDate,
+    endDate,
     statuses = DEFAULT_SYNC_STATUSES,
   } = params;
 
@@ -183,7 +187,7 @@ export async function syncOrders(params: SyncOrdersParams): Promise<SyncOrdersRe
     }
 
     if (endDate) {
-      // Convert WIB (UTC+7) to UTC for TikTok API, add 1 day to include the entire end date
+      // Convert WIB (UTC+7) to UTC for TikTok API, add 1 second past 23:59:59 to make exclusive upper bound
       const endDateWIB = new Date(`${endDate}T23:59:59+07:00`);
       body.create_time_lt = Math.floor(endDateWIB.getTime() / 1000) + 1;
     }

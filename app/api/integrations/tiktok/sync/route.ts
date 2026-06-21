@@ -268,6 +268,10 @@ export async function POST(request: NextRequest) {
 
       console.log(`[Sync] Statements: ${newStatements.length} new, ${updateStatements.length} existing, ${skippedCount} skipped (rejected)`);
 
+      // Update syncResult with accurate DB-level counts
+      syncResult.statements.created = newStatements.length;
+      syncResult.statements.updated = updateStatements.length;
+
       // Insert new statements
       if (newStatements.length > 0) {
         const { error: insertError } = await supabase

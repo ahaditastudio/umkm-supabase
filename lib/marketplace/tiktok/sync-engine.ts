@@ -37,7 +37,7 @@ export type SyncEngineParams = {
   appSecret: string;
   mode: "full" | "incremental" | "backfill";
   startDate?: string; // ISO date string for backfill
-  endDate?: string; // ISO date string for filtering orders
+  endDate?: string; // ISO date string for filtering orders and statements
 };
 
 export type SyncEngineResult = {
@@ -173,6 +173,7 @@ export async function runSync(params: SyncEngineParams): Promise<SyncEngineResul
     const statementsResult = await syncStatements({
       ...apiParams,
       startDate: syncStartDate,
+      endDate: customEndDate,
       mappings,
       categories,
       cashAccounts,

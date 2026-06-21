@@ -134,7 +134,13 @@ export default function IntegrationsPage() {
       });
       const data = await response.json();
       if (data.success) {
-        toast.success(`Sync selesai! Statements: ${data.summary.statements.fetched}, Orders: ${data.summary.orders.fetched}`);
+        const stmts = data.summary.statements;
+        const orders = data.summary.orders;
+
+        const stmtMsg = `${stmts.fetched} fetched → ${stmts.created} baru, ${stmts.updated} diupdate`;
+        const orderMsg = `${orders.fetched} fetched → ${orders.created} baru, ${orders.updated} diupdate`;
+
+        toast.success(`Sync selesai! Payment: ${stmtMsg} | Orders: ${orderMsg}`);
         fetchConnections();
       } else {
         toast.error(`Sync gagal: ${data.error}`);
@@ -303,8 +309,8 @@ export default function IntegrationsPage() {
                             startDate.setDate(today.getDate() - 30);
                         }
 
-                        setSyncStartDate(startDate.toISOString().split("T")[0]);
-                        setSyncEndDate(endDate.toISOString().split("T")[0]);
+                        setSyncStartDate(toLocalDateStr(startDate));
+                        setSyncEndDate(toLocalDateStr(endDate));
                       }}
                       className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary"
                     >

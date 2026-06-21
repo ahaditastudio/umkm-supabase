@@ -32,6 +32,7 @@ export type SyncStatementsParams = {
   companyId: string;
   connectionId: string;
   startDate?: string; // ISO date string (e.g., "2026-01-01")
+  endDate?: string; // ISO date string for upper bound filter
   mappings: MarketplaceAccountMapping[];
   categories: Category[];
   cashAccounts: CashAccount[];
@@ -81,6 +82,7 @@ function convertToStatement(
       : undefined,
     reconciled: false,
     orderCount: 0,
+    approvalStatus: "pending_approval",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -107,6 +109,7 @@ export async function syncStatements(
     companyId,
     connectionId,
     startDate,
+    endDate,
     mappings,
     categories,
     cashAccounts,
@@ -119,9 +122,15 @@ export async function syncStatements(
   };
 
   if (startDate) {
-    // Convert date string to Unix timestamp
-    const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
-    extraParams.statement_time_ge = startTimestamp;
+    // Convert WIB (UTC+7) date string to UTC Unix timestamp — same approach as sync-orders.ts
+    const startDateWIB = new Date(`${startDate}T00:00:00+07:00`);
+    extraParams.statement_time_ge = Math.floor(startDateWIB.getTime() / 1000);
+  }
+
+  if (endDate) {
+    // Convert WIB (UTC+7) to UTC, add 1 second past 23:59:59 to make exclusive upper bound
+    const endDateWIB = new Date(`${endDate}T23:59:59+07:00`);
+    extraParams.statement_time_lt = Math.floor(endDateWIB.getTime() / 1000) + 1;
   }
 
   // Fetch all statements from TikTok API
