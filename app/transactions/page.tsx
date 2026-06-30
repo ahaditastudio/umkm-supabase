@@ -75,6 +75,8 @@ export default function TransactionsPage() {
     hasMore,
     fetchNextPage,
     refresh: refreshTransactions,
+    updateTransaction,
+    prependTransaction,
   } = usePaginatedTransactions(
     appUser?.companyId || "",
     paginationFilters
@@ -209,6 +211,7 @@ export default function TransactionsPage() {
         }
 
         // Update local state directly so UI responds immediately
+        prependTransaction(result);
         useKasFlowStore.setState((state) => {
           // Avoid duplicates — check if already added by realtime sync
           const exists = state.transactions.some((t) => t.id === result.id);
@@ -269,6 +272,8 @@ export default function TransactionsPage() {
       } else {
         softDeleteTransaction(selectedTxId);
       }
+      // Optimistically update local state — strikethrough instead of disappearing
+      updateTransaction(selectedTxId, { deletedAt: new Date().toISOString() });
       toast.success("Transaksi berhasil dinonaktifkan (soft deleted).");
       setDeleteModalOpen(false);
     } catch (error) {
@@ -294,6 +299,8 @@ export default function TransactionsPage() {
       } else {
         restoreTransaction(id);
       }
+      // Optimistically clear deletedAt — immediately restores normal look
+      updateTransaction(id, { deletedAt: undefined });
       toast.success("Transaksi berhasil dipulihkan.");
     } catch (error) {
       toast.error(

@@ -48,10 +48,26 @@ export function usePaginatedTransactions(companyId: string, filters: {
     fetchPage(null, false);
   }, [fetchPage]);
 
+  // Optimistically patch a transaction in local state (for soft-delete/restore)
+  const updateTransaction = useCallback((id: string, patch: Partial<Transaction>) => {
+    setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+  }, []);
+
+  // Prepend a new transaction into local state — immediate UI feedback
+  const prependTransaction = useCallback((tx: Transaction) => {
+    setTransactions(prev => {
+      if (prev.some(t => t.id === tx.id)) return prev; // avoid duplicates
+      return [tx, ...prev].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        || b.id.localeCompare(a.id)
+      );
+    });
+  }, []);
+
   // Reset and reload when filters change
   useEffect(() => {
     refresh();
   }, [companyId, filters.search, filters.type, filters.accountId, filters.year]);
 
-  return { transactions, loading, hasMore, fetchNextPage, refresh };
+  return { transactions, loading, hasMore, fetchNextPage, refresh, updateTransaction, prependTransaction };
 }

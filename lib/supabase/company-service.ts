@@ -297,11 +297,6 @@ export async function getTransactionsPaginated(
     .order("id", { ascending: false })
     .limit(limit + 1); // Fetch one extra to determine hasMore
 
-  // Apply deleted filter
-  if (!filters.includeDeleted) {
-    query = query.is("deleted_at", null);
-  }
-
   // Apply type filter
   if (filters.type) {
     query = query.eq("type", filters.type);
