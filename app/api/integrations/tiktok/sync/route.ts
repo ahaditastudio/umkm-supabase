@@ -291,7 +291,8 @@ export async function POST(request: NextRequest) {
       if (updateStatements.length > 0) {
         console.log(`[Sync] Updating ${updateStatements.length} existing statements...`);
 
-        const updatePromises = updateStatements.map(async (stmt) => {
+        let errorCount = 0;
+        for (const stmt of updateStatements) {
           const { error: updateError } = await supabase
             .from("marketplace_statements")
             .update(stmt)
@@ -301,13 +302,10 @@ export async function POST(request: NextRequest) {
 
           if (updateError) {
             console.error("[Sync] Failed to update statement:", stmt.platform_statement_id, updateError);
-            return 1;
+            errorCount++;
           }
-          return 0;
-        });
+        }
 
-        const errors = await Promise.all(updatePromises);
-        const errorCount = errors.reduce((sum, e) => sum + e, 0);
         console.log(`[Sync] Statement updates: ${updateStatements.length - errorCount} succeeded, ${errorCount} failed`);
       }
     }
@@ -344,17 +342,30 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
       }));
 
-      const { error: orderError } = await supabase
-        .from("marketplace_orders")
-        .upsert(ordersToUpsert, {
-          onConflict: "connection_id,platform_order_id",
-        });
+      console.log(`[Sync] Upserting ${ordersToUpsert.length} orders in batches...`);
+      const BATCH_SIZE = 50;
+      let orderErrorsCount = 0;
+      let lastOrderError = null;
 
-      if (orderError) {
-        console.error("[Sync] Failed to upsert orders:", orderError);
+      for (let i = 0; i < ordersToUpsert.length; i += BATCH_SIZE) {
+        const batch = ordersToUpsert.slice(i, i + BATCH_SIZE);
+        const { error: orderError } = await supabase
+          .from("marketplace_orders")
+          .upsert(batch, {
+            onConflict: "connection_id,platform_order_id",
+          });
+
+        if (orderError) {
+          console.error(`[Sync] Failed to upsert order batch starting at ${i}:`, orderError);
+          orderErrorsCount++;
+          lastOrderError = orderError;
+        }
+      }
+
+      if (orderErrorsCount > 0) {
         syncResult.errors.push({
           stage: "orders",
-          message: `Failed to upsert ${ordersToUpsert.length} orders: ${orderError.message}`,
+          message: `Failed to upsert some orders: ${orderErrorsCount} batches failed. Last error: ${lastOrderError?.message}`,
         });
       }
     }
