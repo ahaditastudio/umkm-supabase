@@ -5,6 +5,19 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { bootstrapCompanyForUser } from "@/lib/supabase/bootstrap";
 import type { UserRole } from "@/lib/types";
 
+/** Supabase PostgrestError has non-enumerable properties — extract them for readable logging. */
+function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object") {
+    const own = Object.getOwnPropertyNames(err).reduce<Record<string, unknown>>((acc, k) => {
+      acc[k] = (err as Record<string, unknown>)[k];
+      return acc;
+    }, {});
+    return JSON.stringify(own);
+  }
+  return String(err);
+}
+
 type AppUser = {
   uid: string;
   email: string | null;
@@ -113,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 role: result.role,
               });
             } catch (bootstrapErr) {
-              console.error("Bootstrap error:", bootstrapErr);
+              console.error("Bootstrap error:", formatError(bootstrapErr));
               setAppUser(null);
             }
           }
@@ -132,7 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               role: result.role,
             });
           } catch (bootstrapErr) {
-            console.error("Bootstrap error:", bootstrapErr);
+            console.error("Bootstrap error:", formatError(bootstrapErr));
             setAppUser(null);
           }
         }
@@ -222,8 +235,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: result.role,
         });
       } catch (bootstrapError) {
-        console.error('Bootstrap error:', bootstrapError);
-        throw new Error(`Registrasi berhasil, tapi gagal membuat profil: ${bootstrapError instanceof Error ? bootstrapError.message : 'Unknown error'}`);
+        const errMsg = formatError(bootstrapError);
+        console.error('Bootstrap error:', errMsg);
+        throw new Error(`Registrasi berhasil, tapi gagal membuat profil: ${errMsg}`);
       }
     }
   };

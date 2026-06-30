@@ -2,6 +2,21 @@ import { createClient } from "@/lib/supabase/client";
 import { defaultAccounts, defaultCategories, defaultCashAccounts, defaultTaxSettings, defaultAccountingPeriod } from "@/lib/accounting";
 import type { BusinessProfile, UserRole } from "@/lib/types";
 
+/** Supabase PostgrestError has non-enumerable properties that show as `{}` in console.error.
+ *  Extract the actual error details for readable logging. */
+function formatSupabaseError(err: unknown): Record<string, unknown> {
+  if (err && typeof err === "object") {
+    const e = err as Record<string, unknown>;
+    return {
+      message: e.message ?? String(err),
+      code: e.code ?? "unknown",
+      details: e.details ?? null,
+      hint: e.hint ?? null,
+    };
+  }
+  return { message: String(err) };
+}
+
 export function companyIdFromUid(uid: string) {
   return `company_${uid}`;
 }
@@ -43,7 +58,10 @@ export async function bootstrapCompanyForUser({
       updated_at: now,
     });
 
-  if (profileError) throw profileError;
+  if (profileError) {
+    console.error("Bootstrap: failed to create business_profiles", formatSupabaseError(profileError));
+    throw new Error(`Gagal membuat profil bisnis: ${profileError.message || "Unknown error"}`);
+  }
 
   // Create user record
   const { error: userError } = await supabase
@@ -57,7 +75,10 @@ export async function bootstrapCompanyForUser({
       updated_at: now,
     });
 
-  if (userError) throw userError;
+  if (userError) {
+    console.error("Bootstrap: failed to create users", formatSupabaseError(userError));
+    throw new Error(`Gagal membuat data pengguna: ${userError.message || "Unknown error"}`);
+  }
 
   // Insert default accounts
   const accountsData = defaultAccounts.map((account) => ({
@@ -71,13 +92,15 @@ export async function bootstrapCompanyForUser({
     parent_id: account.parentId ? `${companyId}_${account.parentId}` : null,
     is_cash: account.isCash || false,
     is_active: account.isActive,
-    neraca_section: account.neracaSection || null,
     created_at: now,
     updated_at: now,
   }));
 
   const { error: accountsError } = await supabase.from("accounts").insert(accountsData);
-  if (accountsError) throw accountsError;
+  if (accountsError) {
+    console.error("Bootstrap: failed to insert accounts", formatSupabaseError(accountsError));
+    throw new Error(`Gagal membuat akun default: ${accountsError.message || "Unknown error"}`);
+  }
 
   // Insert default categories (including marketplace categories)
   const marketplaceCategories = [
@@ -102,7 +125,10 @@ export async function bootstrapCompanyForUser({
   }));
 
   const { error: categoriesError } = await supabase.from("account_categories").insert(categoriesData);
-  if (categoriesError) throw categoriesError;
+  if (categoriesError) {
+    console.error("Bootstrap: failed to insert categories", formatSupabaseError(categoriesError));
+    throw new Error(`Gagal membuat kategori: ${categoriesError.message || "Unknown error"}`);
+  }
 
   // Insert default cash accounts
   const cashAccountsData = defaultCashAccounts.map((cashAccount) => ({
@@ -117,7 +143,10 @@ export async function bootstrapCompanyForUser({
   }));
 
   const { error: cashAccountsError } = await supabase.from("cash_accounts").insert(cashAccountsData);
-  if (cashAccountsError) throw cashAccountsError;
+  if (cashAccountsError) {
+    console.error("Bootstrap: failed to insert cash_accounts", formatSupabaseError(cashAccountsError));
+    throw new Error(`Gagal membuat akun kas: ${cashAccountsError.message || "Unknown error"}`);
+  }
 
   // Insert default tax settings
   const { error: taxError } = await supabase.from("tax_settings").insert({
@@ -132,7 +161,10 @@ export async function bootstrapCompanyForUser({
     updated_at: now,
   });
 
-  if (taxError) throw taxError;
+  if (taxError) {
+    console.error("Bootstrap: failed to insert tax_settings", formatSupabaseError(taxError));
+    throw new Error(`Gagal membuat pengaturan pajak: ${taxError.message || "Unknown error"}`);
+  }
 
   // Insert default accounting period
   const { error: periodError } = await supabase.from("accounting_periods").insert({
@@ -146,7 +178,10 @@ export async function bootstrapCompanyForUser({
     updated_at: now,
   });
 
-  if (periodError) throw periodError;
+  if (periodError) {
+    console.error("Bootstrap: failed to insert accounting_periods", formatSupabaseError(periodError));
+    throw new Error(`Gagal membuat periode akuntansi: ${periodError.message || "Unknown error"}`);
+  }
 
   // Create audit log
   await supabase.from("audit_logs").insert({
