@@ -545,7 +545,7 @@ CREATE POLICY "Users can insert own row" ON users FOR INSERT WITH CHECK (auth.ui
 -- Business Profiles: via users.company_id
 CREATE POLICY "Users can read own company" ON business_profiles FOR SELECT USING (id = auth_user_company_id());
 CREATE POLICY "Users can update own company" ON business_profiles FOR UPDATE USING (id = auth_user_company_id());
-CREATE POLICY "Users can insert own company" ON business_profiles FOR INSERT WITH CHECK (id = auth_user_company_id());
+CREATE POLICY "Users can insert own company" ON business_profiles FOR INSERT WITH CHECK (id = 'company_' || auth.uid());
 
 -- Generic company-scoped CRUD policies
 -- Accounts
