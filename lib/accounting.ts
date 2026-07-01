@@ -951,13 +951,17 @@ export function calculateReportSummary(
 
   const activeFrom = from || defaultFrom;
   const activeTo = to || defaultTo;
-  const taxPeriod = to ? to.slice(0, 7) : monthKey(now);
 
   const filteredJournals = journals.filter((j) => !activeTo || j.date <= activeTo);
   const balances = calculateAccountBalances(filteredJournals, accounts);
   const monthlyProfitLoss = calculateProfitLoss(journals, accounts, activeFrom, activeTo, undefined, taxSettings);
   const balanceSheet = calculateBalanceSheet(filteredJournals, accounts, taxSettings);
-  const taxReport = calculateTaxReport(journals, accounts, taxSettings, taxPeriod);
+
+  const taxBase = taxSettings.base === "gross_revenue"
+    ? monthlyProfitLoss.revenue
+    : Math.max(monthlyProfitLoss.netProfit, 0);
+  const estimatedTax = taxSettings.enabled ? taxBase * taxSettings.rate : 0;
+
   const totalCash = cashAccounts
     .filter((cashAccount) => cashAccount.type === "cash")
     .reduce((total, cashAccount) => total + (balances[cashAccount.accountId] ?? 0), 0);
@@ -971,7 +975,7 @@ export function calculateReportSummary(
     monthlyRevenue: monthlyProfitLoss.revenue,
     monthlyExpenses: monthlyProfitLoss.totalOperatingExpenses + monthlyProfitLoss.cogs,
     netProfit: monthlyProfitLoss.netProfit,
-    estimatedTax: taxReport.estimatedTax,
+    estimatedTax,
     totalAssets: balanceSheet.assets,
     totalLiabilities: balanceSheet.liabilities,
     totalEquity: balanceSheet.equity,

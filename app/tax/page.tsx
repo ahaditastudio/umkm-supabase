@@ -1,10 +1,11 @@
 "use client";
 
-import { CalendarClock, FileCheck, Percent } from "lucide-react";
+import { CalendarClock, FileCheck, Percent, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { MetricCard } from "@/components/metric-card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -17,6 +18,7 @@ import { Select } from "@/components/ui/select";
 import { calculateTaxReport } from "@/lib/accounting";
 import { calculateProfitLossMemo, calculateTaxReportMemo } from "@/lib/accounting-memoized";
 import { updateTaxSettings as updateTaxSettingsDB } from "@/lib/supabase/company-service";
+import { toast } from "@/lib/toast";
 import type { TaxSettings } from "@/lib/types";
 import { formatCurrency, formatDate, monthKey, toInputDate } from "@/lib/utils";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
@@ -32,20 +34,87 @@ export default function TaxPage() {
   const updateTaxSettings = useKasFlowStore((state) => state.updateTaxSettings);
   const [period, setPeriod] = useState(monthKey(new Date()));
 
+  // Local form states
+  const [formName, setFormName] = useState(taxSettings.name);
+  const [formRate, setFormRate] = useState(taxSettings.rate * 100);
+  const [formBase, setFormBase] = useState<"gross_revenue" | "net_profit">(taxSettings.base);
+  const [formDueDay, setFormDueDay] = useState(taxSettings.dueDay);
+  const [formEnabled, setFormEnabled] = useState(taxSettings.enabled);
+  const [saving, setSaving] = useState(false);
+
+  // Sync form states with store when taxSettings loads or updates
+  useEffect(() => {
+    setFormName(taxSettings.name);
+    setFormRate(taxSettings.rate * 100);
+    setFormBase(taxSettings.base);
+    setFormDueDay(taxSettings.dueDay);
+    setFormEnabled(taxSettings.enabled);
+  }, [taxSettings]);
+
+  const isDirty =
+    formName !== taxSettings.name ||
+    formRate !== taxSettings.rate * 100 ||
+    formBase !== taxSettings.base ||
+    formDueDay !== taxSettings.dueDay ||
+    formEnabled !== taxSettings.enabled;
+
   useEffect(() => {
     if (companyId && !journalEntriesLoaded) {
       loadJournalEntries();
     }
   }, [companyId, journalEntriesLoaded, loadJournalEntries]);
+
   const taxReport = useMemo(
     () => calculateTaxReportMemo(journalEntries, accounts, taxSettings, period),
     [journalEntries, accounts, taxSettings, period],
   );
-  const persistTaxSettings = async (settings: Partial<TaxSettings>) => {
-    const nextSettings = { ...taxSettings, ...settings };
-    updateTaxSettings(settings);
-    if (appUser)
-      await updateTaxSettingsDB(appUser.companyId, nextSettings);
+
+  const handleSave = async () => {
+    if (!formName.trim()) {
+      toast.error("Nama aturan pajak wajib diisi.");
+      return;
+    }
+    const rateVal = Number(formRate);
+    if (isNaN(rateVal) || rateVal < 0) {
+      toast.error("Tarif pajak harus berupa angka positif.");
+      return;
+    }
+    const dueDayVal = Number(formDueDay);
+    if (isNaN(dueDayVal) || dueDayVal < 1 || dueDayVal > 28) {
+      toast.error("Due day harus bernilai di antara 1 dan 28.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const updates = {
+        name: formName.trim(),
+        rate: rateVal / 100,
+        base: formBase,
+        dueDay: dueDayVal,
+        enabled: formEnabled,
+      };
+
+      updateTaxSettings(updates);
+      if (appUser) {
+        await updateTaxSettingsDB(appUser.companyId, { ...taxSettings, ...updates });
+      }
+      toast.success("Pengaturan pajak berhasil diperbarui.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Gagal memperbarui pengaturan pajak.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    setFormName(taxSettings.name);
+    setFormRate(taxSettings.rate * 100);
+    setFormBase(taxSettings.base);
+    setFormDueDay(taxSettings.dueDay);
+    setFormEnabled(taxSettings.enabled);
   };
 
   const annual = useMemo(() => {
@@ -55,6 +124,8 @@ export default function TaxPage() {
       accounts,
       toInputDate(new Date(year, 0, 1)),
       toInputDate(new Date(year, 11, 31)),
+      undefined,
+      taxSettings,
     );
     const base =
       taxSettings.base === "gross_revenue"
@@ -115,10 +186,8 @@ export default function TaxPage() {
             <div className="grid gap-2">
               <Label>Nama Aturan</Label>
               <Input
-                value={taxSettings.name}
-                onChange={(event) =>
-                  persistTaxSettings({ name: event.target.value })
-                }
+                value={formName}
+                onChange={(event) => setFormName(event.target.value)}
               />
             </div>
             <div className="grid gap-2">
@@ -126,20 +195,16 @@ export default function TaxPage() {
               <Input
                 type="number"
                 step="0.01"
-                value={taxSettings.rate * 100}
-                onChange={(event) =>
-                  persistTaxSettings({ rate: Number(event.target.value) / 100 })
-                }
+                value={formRate}
+                onChange={(event) => setFormRate(Number(event.target.value))}
               />
             </div>
             <div className="grid gap-2">
               <Label>Basis Perhitungan</Label>
               <Select
-                value={taxSettings.base}
+                value={formBase}
                 onChange={(event) =>
-                  persistTaxSettings({
-                    base: event.target.value as "gross_revenue" | "net_profit",
-                  })
+                  setFormBase(event.target.value as "gross_revenue" | "net_profit")
                 }
               >
                 <option value="gross_revenue">Gross Revenue</option>
@@ -152,22 +217,40 @@ export default function TaxPage() {
                 type="number"
                 min="1"
                 max="28"
-                value={taxSettings.dueDay}
-                onChange={(event) =>
-                  persistTaxSettings({ dueDay: Number(event.target.value) })
-                }
+                value={formDueDay}
+                onChange={(event) => setFormDueDay(Number(event.target.value))}
               />
             </div>
             <label className="flex items-center gap-3 rounded-xl border p-3 text-sm">
               <input
                 type="checkbox"
-                checked={taxSettings.enabled}
-                onChange={(event) =>
-                  persistTaxSettings({ enabled: event.target.checked })
-                }
+                checked={formEnabled}
+                onChange={(event) => setFormEnabled(event.target.checked)}
               />
               Aktifkan estimasi pajak
             </label>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800/50">
+              <Button
+                onClick={handleSave}
+                disabled={!isDirty || saving}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs h-9 gap-1.5"
+              >
+                <Save className="h-3.5 w-3.5" />
+                Simpan Perubahan
+              </Button>
+              {isDirty && (
+                <Button
+                  variant="outline"
+                  onClick={handleReset}
+                  disabled={saving}
+                  className="text-xs font-semibold h-9"
+                >
+                  Batal
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
 
