@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     // 2. Build summary query for totals
     let summaryQuery = supabase
       .from("marketplace_statements")
-      .select("revenue_amount, fee_amount, settlement_amount, payment_status, reconciled, approval_status")
+      .select("revenue_amount, fee_amount, settlement_amount, payment_status, reconciled, approval_status, adjustment_amount")
       .eq("company_id", companyId);
 
     if (connectionId && connectionId !== "all") {
@@ -75,6 +75,7 @@ export async function GET(request: NextRequest) {
     let totalRevenue = 0;
     let totalFee = 0;
     let totalSettlement = 0;
+    let totalAdjustment = 0;
     let reconciledCount = 0;
     let pendingCount = 0;
 
@@ -83,6 +84,7 @@ export async function GET(request: NextRequest) {
       totalRevenue = settled.reduce((sum, s) => sum + (s.revenue_amount || 0), 0);
       totalFee = settled.reduce((sum, s) => sum + Math.abs(s.fee_amount || 0), 0);
       totalSettlement = settled.reduce((sum, s) => sum + (s.settlement_amount || 0), 0);
+      totalAdjustment = settled.reduce((sum, s) => sum + (s.adjustment_amount || 0), 0);
       reconciledCount = summaryData.filter((s) => s.reconciled).length;
       pendingCount = summaryData.filter((s) => s.approval_status === "pending_approval").length;
     }
@@ -121,6 +123,7 @@ export async function GET(request: NextRequest) {
         totalRevenue,
         totalFee,
         totalSettlement,
+        totalAdjustment,
         reconciledCount,
         pendingCount,
       },

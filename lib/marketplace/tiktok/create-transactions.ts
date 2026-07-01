@@ -2,8 +2,8 @@
 // CREATE MARKETPLACE TRANSACTIONS
 // ============================================================
 // Converts a settled statement into max 3 KasFlow transactions:
-// 1. INCOME  — daily revenue
-// 2. EXPENSE — daily platform fee (if fee > 0)
+// 1. INCOME  — daily revenue (and positive adjustment)
+// 2. EXPENSE — daily platform fee (and negative adjustment)
 // 3. TRANSFER — payout to bank (if payment_status = PAID)
 //
 // Idempotency: only creates transactions when statement links are NULL.
@@ -101,9 +101,17 @@ export function createTransactionsFromStatement(
   const feeCategory = resolveCategoryFromMapping(feeMapping, categories, "expense");
   const cashAccount = resolveCashAccountFromMapping(revenueMapping ?? feeMapping, cashAccounts);
 
-  // ── TXN 1: INCOME (always created if revenue > 0) ──
-  if (statement.revenueAmount > 0 && revenueCategory && cashAccount) {
+  // ── TXN 1: INCOME (revenue + positive adjustment) ──
+  const positiveAdjustment = statement.adjustmentAmount > 0 ? statement.adjustmentAmount : 0;
+  const incomeAmount = statement.revenueAmount + positiveAdjustment;
+
+  if (incomeAmount > 0 && revenueCategory && cashAccount) {
     const now = new Date().toISOString();
+    const hasAdjustment = positiveAdjustment > 0;
+    const desc = hasAdjustment
+      ? `Penjualan TikTok - ${date} (${statement.orderCount} order, termasuk Penyesuaian Rp ${positiveAdjustment.toLocaleString("id-ID")})`
+      : `Penjualan TikTok - ${date} (${statement.orderCount} order)`;
+
     result.incomeTxn = {
       id: uid("tx"),
       companyId,
@@ -111,8 +119,8 @@ export function createTransactionsFromStatement(
       date,
       categoryId: revenueCategory.id,
       cashAccountId: cashAccount.id,
-      amount: statement.revenueAmount,
-      description: `Penjualan TikTok - ${date} (${statement.orderCount} order)`,
+      amount: incomeAmount,
+      description: desc,
       status: "posted",
       marketplaceConnectionId: connectionId,
       createdAt: now,
@@ -121,9 +129,17 @@ export function createTransactionsFromStatement(
     result.transactionsCreated++;
   }
 
-  // ── TXN 2: EXPENSE (if fee != 0, TikTok returns negative fee) ──
-  if (statement.feeAmount !== 0 && feeCategory && cashAccount) {
+  // ── TXN 2: EXPENSE (platform fee + negative adjustment) ──
+  const negativeAdjustment = statement.adjustmentAmount < 0 ? Math.abs(statement.adjustmentAmount) : 0;
+  const expenseAmount = Math.abs(statement.feeAmount) + negativeAdjustment;
+
+  if (expenseAmount !== 0 && feeCategory && cashAccount) {
     const now = new Date().toISOString();
+    const feePart = Math.abs(statement.feeAmount) > 0 ? "Biaya Platform" : "";
+    const adjPart = negativeAdjustment > 0 ? `Penyesuaian (Minus) Rp ${negativeAdjustment.toLocaleString("id-ID")}` : "";
+    const descParts = [feePart, adjPart].filter(Boolean);
+    const desc = `Potongan TikTok - ${date} (${descParts.join(" & ")})`;
+
     result.expenseTxn = {
       id: uid("tx"),
       companyId,
@@ -131,8 +147,8 @@ export function createTransactionsFromStatement(
       date,
       categoryId: feeCategory.id,
       cashAccountId: cashAccount.id,
-      amount: Math.abs(statement.feeAmount),
-      description: `Biaya Platform TikTok - ${date}`,
+      amount: expenseAmount,
+      description: desc,
       status: "posted",
       marketplaceConnectionId: connectionId,
       createdAt: now,

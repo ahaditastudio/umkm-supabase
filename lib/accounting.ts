@@ -942,14 +942,22 @@ export function calculateReportSummary(
   accounts: Account[],
   cashAccounts: CashAccount[],
   taxSettings: TaxSettings,
+  from?: string,
+  to?: string,
 ): ReportSummary {
   const now = new Date();
-  const from = toInputDate(new Date(now.getFullYear(), now.getMonth(), 1));
-  const to = toInputDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-  const balances = calculateAccountBalances(journals, accounts);
-  const monthlyProfitLoss = calculateProfitLoss(journals, accounts, from, to, undefined, taxSettings);
-  const balanceSheet = calculateBalanceSheet(journals, accounts, taxSettings);
-  const taxReport = calculateTaxReport(journals, accounts, taxSettings, monthKey(now));
+  const defaultFrom = toInputDate(new Date(now.getFullYear(), now.getMonth(), 1));
+  const defaultTo = toInputDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+
+  const activeFrom = from || defaultFrom;
+  const activeTo = to || defaultTo;
+  const taxPeriod = to ? to.slice(0, 7) : monthKey(now);
+
+  const filteredJournals = journals.filter((j) => !activeTo || j.date <= activeTo);
+  const balances = calculateAccountBalances(filteredJournals, accounts);
+  const monthlyProfitLoss = calculateProfitLoss(journals, accounts, activeFrom, activeTo, undefined, taxSettings);
+  const balanceSheet = calculateBalanceSheet(filteredJournals, accounts, taxSettings);
+  const taxReport = calculateTaxReport(journals, accounts, taxSettings, taxPeriod);
   const totalCash = cashAccounts
     .filter((cashAccount) => cashAccount.type === "cash")
     .reduce((total, cashAccount) => total + (balances[cashAccount.accountId] ?? 0), 0);
@@ -975,8 +983,10 @@ export function topAccountsByType(
   accounts: Account[],
   type: "revenue" | "expense",
   limit = 5,
+  from?: string,
+  to?: string,
 ) {
-  const profitLoss = calculateProfitLoss(journals, accounts);
+  const profitLoss = calculateProfitLoss(journals, accounts, from, to);
   let values: Record<string, number>;
   if (type === "revenue") {
     values = profitLoss.revenueByAccount;

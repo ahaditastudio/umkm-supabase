@@ -69,6 +69,6 @@ export const calculateCashFlowMemo = memoize<
  * Caches up to 5 combinations
  */
 export const calculateReportSummaryMemo = memoize<
-  [JournalEntry[], Account[], CashAccount[], TaxSettings],
+  [JournalEntry[], Account[], CashAccount[], TaxSettings, string?, string?],
   ReportSummary
 >(calculateReportSummary, 5);

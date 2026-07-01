@@ -41,12 +41,21 @@ export function formatDate(value: string | Date) {
 }
 
 export function toInputDate(date = new Date()) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function monthKey(value: string | Date) {
-  const date = typeof value === "string" ? new Date(value) : value;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  if (typeof value === "string") {
+    if (value.length >= 7 && value[4] === "-") {
+      return value.slice(0, 7);
+    }
+    const date = new Date(value);
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export function startOfMonth(date = new Date()) {

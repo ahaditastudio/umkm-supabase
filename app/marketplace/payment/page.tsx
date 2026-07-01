@@ -175,6 +175,7 @@ export default function MarketplacePaymentPage() {
     totalRevenue: 0,
     totalFee: 0,
     totalSettlement: 0,
+    totalAdjustment: 0,
     reconciledCount: 0,
     pendingCount: 0,
   };
@@ -548,7 +549,7 @@ export default function MarketplacePaymentPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
@@ -569,6 +570,19 @@ export default function MarketplacePaymentPage() {
           <CardContent>
             <p className="text-lg font-bold">{formatCurrency(totals.totalFee)}</p>
             <p className="text-[10px] text-muted-foreground mt-1">Platform fees</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+              <AlertCircle className="h-3.5 w-3.5" />Adjustment
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className={`text-lg font-bold ${totals.totalAdjustment < 0 ? "text-red-600" : totals.totalAdjustment > 0 ? "text-emerald-600" : ""}`}>
+              {formatCurrency(totals.totalAdjustment)}
+            </p>
+            <p className="text-[10px] text-muted-foreground mt-1">Penyesuaian TikTok</p>
           </CardContent>
         </Card>
         <Card>
@@ -655,7 +669,7 @@ export default function MarketplacePaymentPage() {
                           <th className="py-2 px-2 text-right font-medium">Orders</th>
                           <th className="py-2 px-2 text-right font-medium">Revenue</th>
                           <th className="py-2 px-2 text-right font-medium">Fees</th>
-                          <th className="py-2 px-2 text-right font-medium">Settlement</th>
+                          <th className="py-2 px-2 text-right font-medium">Penyesuaian</th><th className="py-2 px-2 text-right font-medium">Settlement</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -679,7 +693,9 @@ export default function MarketplacePaymentPage() {
                               <td className="py-2 px-2 text-right">{stmt.orderCount}</td>
                               <td className="py-2 px-2 text-right font-semibold">{formatCurrency(stmt.revenueAmount, stmt.currency)}</td>
                               <td className="py-2 px-2 text-right">{formatCurrency(Math.abs(stmt.feeAmount), stmt.currency)}</td>
-                              <td className="py-2 px-2 text-right font-semibold">{formatCurrency(stmt.settlementAmount, stmt.currency)}</td>
+                              <td className={`py-2 px-2 text-right ${stmt.adjustmentAmount < 0 ? "text-red-600 font-semibold" : stmt.adjustmentAmount > 0 ? "text-emerald-600 font-semibold" : ""}`}>
+  {formatCurrency(stmt.adjustmentAmount, stmt.currency)}
+</td><td className="py-2 px-2 text-right font-semibold">{formatCurrency(stmt.settlementAmount, stmt.currency)}</td>
                             </tr>
                           );
                         })}
@@ -768,7 +784,7 @@ export default function MarketplacePaymentPage() {
                         <th className="py-2 px-2 text-right font-medium">Orders</th>
                         <th className="py-2 px-2 text-right font-medium">Revenue</th>
                         <th className="py-2 px-2 text-right font-medium">Fees</th>
-                        <th className="py-2 px-2 text-right font-medium">Settlement</th>
+                        <th className="py-2 px-2 text-right font-medium">Penyesuaian</th><th className="py-2 px-2 text-right font-medium">Settlement</th>
                         <th className="py-2 px-2 text-right font-medium">Action</th>
                       </tr>
                     </thead>
@@ -786,7 +802,9 @@ export default function MarketplacePaymentPage() {
                           <td className="py-2 px-2 text-right">{stmt.orderCount}</td>
                           <td className="py-2 px-2 text-right font-semibold">{formatCurrency(stmt.revenueAmount, stmt.currency)}</td>
                           <td className="py-2 px-2 text-right">{formatCurrency(Math.abs(stmt.feeAmount), stmt.currency)}</td>
-                          <td className="py-2 px-2 text-right font-semibold">{formatCurrency(stmt.settlementAmount, stmt.currency)}</td>
+                          <td className={`py-2 px-2 text-right ${stmt.adjustmentAmount < 0 ? "text-red-600 font-semibold" : stmt.adjustmentAmount > 0 ? "text-emerald-600 font-semibold" : ""}`}>
+  {formatCurrency(stmt.adjustmentAmount, stmt.currency)}
+</td><td className="py-2 px-2 text-right font-semibold">{formatCurrency(stmt.settlementAmount, stmt.currency)}</td>
                           <td className="py-2 px-2 text-right">
                             <div className="flex gap-1 justify-end">
                               <Button variant="outline" size="sm" onClick={() => handleReject([stmt.id])} disabled={rejecting} className="text-xs h-7 px-2">

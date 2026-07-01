@@ -10,8 +10,9 @@ import {
   TrendingUp,
   Activity,
   ArrowUpRight,
+  Calendar,
 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -78,11 +79,69 @@ export default function DashboardPage() {
   const transactions = useKasFlowStore((state) => state.transactions);
   const profile = useKasFlowStore((state) => state.profile);
 
+  const [filterType, setFilterType] = useState<"this_month" | "month" | "year" | "range">("this_month");
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+
   useEffect(() => {
     if (companyId && !journalEntriesLoaded) {
       loadJournalEntries();
     }
   }, [companyId, journalEntriesLoaded, loadJournalEntries]);
+
+  const { activeFrom, activeTo, periodLabel } = useMemo(() => {
+    const now = new Date();
+    if (filterType === "this_month") {
+      const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      return {
+        activeFrom: from,
+        activeTo: to,
+        periodLabel: "Bulan Ini",
+      };
+    } else if (filterType === "month") {
+      const [year, month] = selectedMonth.split("-");
+      const from = `${selectedMonth}-01`;
+      const lastDay = new Date(Number(year), Number(month), 0).getDate();
+      const to = `${selectedMonth}-${String(lastDay).padStart(2, "0")}`;
+      const monthNames = [
+        "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+        "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+      ];
+      const label = `${monthNames[Number(month) - 1]} ${year}`;
+      return {
+        activeFrom: from,
+        activeTo: to,
+        periodLabel: label,
+      };
+    } else if (filterType === "year") {
+      return {
+        activeFrom: `${selectedYear}-01-01`,
+        activeTo: `${selectedYear}-12-31`,
+        periodLabel: `Tahun ${selectedYear}`,
+      };
+    } else {
+      const from = customStart || `${now.getFullYear()}-01-01`;
+      const to = customEnd || `${now.getFullYear()}-12-31`;
+      const formatDisplay = (dStr: string) => {
+        if (!dStr) return "";
+        const parts = dStr.split("-");
+        return `${parts[2]}/${parts[1]}`;
+      };
+      return {
+        activeFrom: from,
+        activeTo: to,
+        periodLabel: customStart && customEnd ? `${formatDisplay(customStart)} - ${formatDisplay(customEnd)}` : "Custom",
+      };
+    }
+  }, [filterType, selectedMonth, selectedYear, customStart, customEnd]);
 
   const summary = useMemo(
     () =>
@@ -91,20 +150,27 @@ export default function DashboardPage() {
         accounts,
         cashAccounts,
         taxSettings,
+        activeFrom,
+        activeTo,
       ),
-    [journalEntries, accounts, cashAccounts, taxSettings],
+    [journalEntries, accounts, cashAccounts, taxSettings, activeFrom, activeTo],
   );
   const cashFlow = useMemo(
-    () => calculateCashFlowMemo(journalEntries, accounts),
-    [journalEntries, accounts],
+    () => {
+      const allPoints = calculateCashFlowMemo(journalEntries, accounts);
+      const fromMonth = activeFrom.slice(0, 7);
+      const toMonth = activeTo.slice(0, 7);
+      return allPoints.filter((pt) => pt.period >= fromMonth && pt.period <= toMonth);
+    },
+    [journalEntries, accounts, activeFrom, activeTo],
   );
   const topRevenue = useMemo(
-    () => topAccountsByType(journalEntries, accounts, "revenue"),
-    [journalEntries, accounts],
+    () => topAccountsByType(journalEntries, accounts, "revenue", 5, activeFrom, activeTo),
+    [journalEntries, accounts, activeFrom, activeTo],
   );
   const topExpenses = useMemo(
-    () => topAccountsByType(journalEntries, accounts, "expense"),
-    [journalEntries, accounts],
+    () => topAccountsByType(journalEntries, accounts, "expense", 5, activeFrom, activeTo),
+    [journalEntries, accounts, activeFrom, activeTo],
   );
 
   // Show loading state while journal entries are being loaded
@@ -153,6 +219,120 @@ export default function DashboardPage() {
               <span className="text-foreground font-semibold">{formatCountCompact(journalEntries.filter((item) => !item.deletedAt).length)}</span> Jurnal
             </div>
           </div>
+
+          {/* Calendar Filter Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200/60 dark:border-zinc-800/40 bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors h-9"
+            >
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>{periodLabel}</span>
+              <span className="text-[10px] text-muted-foreground opacity-60">▼</span>
+            </button>
+
+            {isFilterOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsFilterOpen(false)} />
+                <div className="absolute right-0 mt-2 w-72 z-50 rounded-xl border border-zinc-200 bg-white p-4 shadow-lg dark:border-zinc-800 dark:bg-zinc-950 animate-in fade-in slide-in-from-top-2 duration-150">
+                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2.5">
+                    Filter Periode
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 bg-muted/60 p-0.5 rounded-lg text-[10px] font-semibold text-muted-foreground">
+                    <button
+                      onClick={() => setFilterType("this_month")}
+                      className={`py-1.5 rounded-md transition-colors ${filterType === "this_month" ? "bg-white dark:bg-zinc-900 text-foreground shadow-sm" : "hover:text-foreground"}`}
+                    >
+                      Bulan Ini
+                    </button>
+                    <button
+                      onClick={() => setFilterType("month")}
+                      className={`py-1.5 rounded-md transition-colors ${filterType === "month" ? "bg-white dark:bg-zinc-900 text-foreground shadow-sm" : "hover:text-foreground"}`}
+                    >
+                      Bulan
+                    </button>
+                    <button
+                      onClick={() => setFilterType("year")}
+                      className={`py-1.5 rounded-md transition-colors ${filterType === "year" ? "bg-white dark:bg-zinc-900 text-foreground shadow-sm" : "hover:text-foreground"}`}
+                    >
+                      Tahun
+                    </button>
+                    <button
+                      onClick={() => setFilterType("range")}
+                      className={`py-1.5 rounded-md transition-colors ${filterType === "range" ? "bg-white dark:bg-zinc-900 text-foreground shadow-sm" : "hover:text-foreground"}`}
+                    >
+                      Custom
+                    </button>
+                  </div>
+
+                  {filterType === "month" && (
+                    <div className="mt-3.5 space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Pilih Bulan</label>
+                      <input
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 p-2 bg-transparent text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+                  )}
+
+                  {filterType === "year" && (
+                    <div className="mt-3.5 space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Pilih Tahun</label>
+                      <select
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(Number(e.target.value))}
+                        className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 p-2 bg-white dark:bg-zinc-950 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      >
+                        {Array.from({ length: 7 }, (_, i) => new Date().getFullYear() - 5 + i).map((y) => (
+                          <option key={y} value={y}>
+                            {y}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {filterType === "range" && (
+                    <div className="mt-3.5 space-y-2.5">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase">Mulai</label>
+                          <input
+                            type="date"
+                            value={customStart}
+                            onChange={(e) => setCustomStart(e.target.value)}
+                            className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 p-2 bg-transparent text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase">Selesai</label>
+                          <input
+                            type="date"
+                            value={customEnd}
+                            onChange={(e) => setCustomEnd(e.target.value)}
+                            className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 p-2 bg-transparent text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-4 pt-2.5 border-t border-zinc-100 dark:border-zinc-800/60 text-[10px] text-muted-foreground flex justify-between items-center">
+                    <span>* Perubahan otomatis diterapkan</span>
+                    <button
+                      onClick={() => setIsFilterOpen(false)}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-2.5 py-1 rounded-md text-[10px] transition-colors"
+                    >
+                      Selesai
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           <Link href="/transactions">
             <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs gap-1">
               Catat Transaksi <ArrowUpRight className="h-3 w-3" />
@@ -179,14 +359,14 @@ export default function DashboardPage() {
           compact
         />
         <MetricCard
-          title="Pendapatan Bulan Ini"
+          title={filterType === "this_month" ? "Pendapatan Bulan Ini" : `Pendapatan (${periodLabel})`}
           value={formatCurrencyCompact(summary.monthlyRevenue)}
           icon={ArrowUpCircle}
           tone="green"
           compact
         />
         <MetricCard
-          title="Pengeluaran Bulan Ini"
+          title={filterType === "this_month" ? "Pengeluaran Bulan Ini" : `Pengeluaran (${periodLabel})`}
           value={formatCurrencyCompact(summary.monthlyExpenses)}
           icon={ArrowDownCircle}
           tone="red"
