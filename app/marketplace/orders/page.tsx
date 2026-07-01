@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { useAuth } from "@/components/auth-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -43,8 +43,6 @@ type Order = {
   feeAmount: number;
   shippingProvider?: string;
 };
-
-const PAGE_SIZE = 25;
 
 /** Format a local date as YYYY-MM-DD (no UTC conversion) */
 function toLocalDateStr(d: Date): string {
@@ -88,8 +86,14 @@ export default function MarketplaceOrdersPage() {
   const [filterStartDate, setFilterStartDate] = useState(getThisMonthStartDate);
   const [filterEndDate, setFilterEndDate] = useState(getThisMonthEndDate);
 
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
+  // Custom states for month-picker and popover daterange
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  });
 
   // Fetch shops with React Query
   const { data: shopsData, isLoading: loadingShops } = useQuery({
@@ -105,14 +109,19 @@ export default function MarketplaceOrdersPage() {
   const shops = shopsData || [];
 
   // Fetch orders with React Query (parallel with shops)
-  const { data: ordersData, isLoading: loadingOrders } = useQuery({
-    queryKey: ["orders", companyId, selectedShop, filterStartDate, filterEndDate, statusFilter, currentPage],
-    queryFn: async () => {
-      const offset = (currentPage - 1) * PAGE_SIZE;
+  const {
+    data: ordersData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: loadingOrders,
+  } = useInfiniteQuery({
+    queryKey: ["orders", companyId, selectedShop, filterStartDate, filterEndDate, statusFilter],
+    queryFn: async ({ pageParam = 0 }) => {
       const params = new URLSearchParams({
         companyId,
-        limit: String(PAGE_SIZE),
-        offset: String(offset),
+        limit: "10", // 10 per page
+        offset: pageParam.toString(),
         startDate: filterStartDate,
         endDate: filterEndDate,
       });
@@ -123,31 +132,20 @@ export default function MarketplaceOrdersPage() {
         params.set("status", statusFilter);
       }
       const res = await fetch(`/api/integrations/tiktok/orders?${params}`);
-      const data = await res.json();
-      return {
-        orders: data.orders || [],
-        total: data.total || 0,
-        stats: data.stats || {
-          total: 0,
-          completed: 0,
-          delivered: 0,
-          inTransit: 0,
-          awaitingCollection: 0,
-          awaitingShipment: 0,
-          cancelled: 0,
-          totalRevenue: 0,
-          settledCount: 0,
-        },
-      };
+      return res.json();
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      const nextOffset = lastPage.offset + lastPage.limit;
+      return nextOffset < lastPage.total ? nextOffset : undefined;
     },
     enabled: !!companyId,
     staleTime: 2 * 60 * 1000, // 2 minutes
   });
 
-  const orders = ordersData?.orders || [];
-  const totalOrders = ordersData?.total || 0;
-  const totalPages = Math.ceil(totalOrders / PAGE_SIZE);
-  const stats = ordersData?.stats || {
+  const orders = ordersData ? ordersData.pages.flatMap((page) => page.orders) : [];
+  const totalOrders = ordersData?.pages[0]?.total || 0;
+  const stats = ordersData?.pages[0]?.stats || {
     total: 0,
     completed: 0,
     delivered: 0,
@@ -159,8 +157,39 @@ export default function MarketplaceOrdersPage() {
     settledCount: 0,
   };
 
-
   const loading = loadingShops || loadingOrders;
+
+  // Infinite Scroll Sentinel Ref & IntersectionObserver
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  const handleLoadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) handleLoadMore();
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [handleLoadMore]);
+
+  const handleMonthChange = (monthStr: string) => {
+    setSelectedMonth(monthStr);
+    if (!monthStr) return;
+    const [year, month] = monthStr.split("-").map(Number);
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0); // last day of month
+    setFilterStartDate(toLocalDateStr(start));
+    setFilterEndDate(toLocalDateStr(end));
+  };
 
   const formatCurrency = (amount: number, currency: string = "IDR") => {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency, minimumFractionDigits: 0 }).format(amount);
@@ -179,28 +208,7 @@ export default function MarketplaceOrdersPage() {
     return <Badge tone="muted">{status}</Badge>;
   };
 
-  // In-progress = all statuses between AWAITING_SHIPMENT and DELIVERED
-  const inProgressCount = stats.awaitingShipment + stats.awaitingCollection + stats.inTransit + stats.delivered;
-
-  // Pagination helper - ensures page numbers stay within valid range
-  const getPageNumbers = () => {
-    const pages = [];
-    const maxVisible = 5;
-    let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-    let end = Math.min(totalPages, start + maxVisible - 1);
-
-    // Adjust start if we're near the end
-    if (end - start + 1 < maxVisible) {
-      start = Math.max(1, end - maxVisible + 1);
-    }
-
-    for (let i = start; i <= end; i++) {
-      pages.push(i);
-    }
-    return pages;
-  };
-
-  if (loading) {
+  if (loading && orders.length === 0) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
@@ -241,18 +249,18 @@ export default function MarketplaceOrdersPage() {
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <Filter className="h-4 w-4 text-muted-foreground" />
-        <select value={selectedShop} onChange={(e) => { setSelectedShop(e.target.value); setCurrentPage(1); }}
+        <select value={selectedShop} onChange={(e) => setSelectedShop(e.target.value)}
           className="h-9 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10">
           <option value="all">Semua Toko ({shops.length})</option>
           {shops.map((shop) => (
             <option key={shop.id} value={shop.id}>{shop.display_name || shop.shop_name}</option>
           ))}
         </select>
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
           className="h-9 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10">
           <option value="all">Semua Status</option>
-          {[...new Set(orders.map((o) => o.platformStatus).filter(Boolean))].map((s) => (
-            <option key={s} value={s!}>{s}</option>
+          {["AWAITING_SHIPMENT", "AWAITING_COLLECTION", "IN_TRANSIT", "DELIVERED", "COMPLETED", "CANCELLED"].map((s) => (
+            <option key={s} value={s}>{s}</option>
           ))}
         </select>
         <div className="flex items-center gap-1.5 text-xs">
@@ -280,14 +288,20 @@ export default function MarketplaceOrdersPage() {
                   break;
                 case "this_month":
                   start = new Date(today.getFullYear(), today.getMonth(), 1);
-                  end = new Date(today.getFullYear(), today.getMonth() + 1, 0); // akhir bulan ini
+                  end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
                   break;
                 case "last_month":
                   start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
                   end = new Date(today.getFullYear(), today.getMonth(), 0);
                   break;
+                case "month":
+                  const [y, m] = selectedMonth.split("-").map(Number);
+                  start = new Date(y, m - 1, 1);
+                  end = new Date(y, m, 0);
+                  break;
                 case "custom":
-                  return; // Don't change dates, let user pick
+                  setIsPopoverOpen(true);
+                  return;
                 default:
                   start = new Date(today);
                   start.setDate(start.getDate() - 29);
@@ -295,7 +309,6 @@ export default function MarketplaceOrdersPage() {
 
               setFilterStartDate(toLocalDateStr(start));
               setFilterEndDate(toLocalDateStr(end));
-              setCurrentPage(1);
             }}
             className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary"
           >
@@ -304,16 +317,55 @@ export default function MarketplaceOrdersPage() {
             <option value="30days">30 Hari Terakhir</option>
             <option value="this_month">Bulan Ini</option>
             <option value="last_month">Bulan Lalu</option>
-            <option value="custom">Custom Range</option>
+            <option value="month">Pilih Bulan</option>
+            <option value="custom">Rentang Kustom</option>
           </select>
+
+          {/* Opsi 2: Tampil 1 Field Bulan */}
+          {datePreset === "month" && (
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => handleMonthChange(e.target.value)}
+              className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary"
+            />
+          )}
+
+          {/* Opsi 1: Tampil 1 Tombol Pemicu Popover */}
           {datePreset === "custom" && (
-            <>
-              <input type="date" value={filterStartDate} onChange={(e) => { setFilterStartDate(e.target.value); setCurrentPage(1); }}
-                className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary" />
-              <span className="text-muted-foreground">→</span>
-              <input type="date" value={filterEndDate} onChange={(e) => { setFilterEndDate(e.target.value); setCurrentPage(1); }}
-                className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary" />
-            </>
+            <div className="relative">
+              <button
+                onClick={() => setIsPopoverOpen(!isPopoverOpen)}
+                className="h-8 flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-3 text-xs outline-none hover:bg-muted/50 transition-colors"
+              >
+                📅 {formatDate(filterStartDate)} - {formatDate(filterEndDate)}
+              </button>
+              {isPopoverOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsPopoverOpen(false)} />
+                  <div className="absolute z-50 left-0 mt-1 p-3 bg-card border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-lg flex flex-col gap-2 min-w-[220px]">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground block font-medium">Dari Tanggal</label>
+                      <input
+                        type="date"
+                        value={filterStartDate}
+                        onChange={(e) => setFilterStartDate(e.target.value)}
+                        className="h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-background px-2 text-xs outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground block font-medium">Sampai Tanggal</label>
+                      <input
+                        type="date"
+                        value={filterEndDate}
+                        onChange={(e) => setFilterEndDate(e.target.value)}
+                        className="h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-background px-2 text-xs outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -403,94 +455,73 @@ export default function MarketplaceOrdersPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-zinc-200 dark:border-zinc-800 text-muted-foreground text-[10px]">
-                    <th className="py-2 px-2 text-left font-medium w-8">#</th>
-                    <th className="py-2 px-2 text-left font-medium">Order ID</th>
-                    {showShopColumn && <th className="py-2 px-2 text-left font-medium">Shop</th>}
-                    <th className="py-2 px-2 text-left font-medium">Status</th>
-                    <th className="py-2 px-2 text-left font-medium">Tanggal</th>
-                    <th className="py-2 px-2 text-right font-medium">Total</th>
-                    <th className="py-2 px-2 text-right font-medium">Pencairan</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orders.map((order, index) => {
-                    const rowNumber = (currentPage - 1) * PAGE_SIZE + index + 1;
-                    return (
-                      <tr key={order.id} className="border-b border-zinc-100 dark:border-zinc-900 hover:bg-muted/30 transition-colors">
-                        <td className="py-2 px-2 font-semibold text-muted-foreground">{rowNumber}</td>
-                        <td className="py-2 px-2 font-mono">{order.platformOrderId}</td>
-                        {showShopColumn && <td className="py-2 px-2">{order.shopName}</td>}
-                        <td className="py-2 px-2">{getStatusBadge(order.platformStatus)}</td>
-                        <td className="py-2 px-2 text-muted-foreground">{formatDate(order.orderCreateTime)}</td>
-                        <td className="py-2 px-2 text-right font-semibold">{formatCurrency(order.totalAmount, order.currency)}</td>
-                        <td className={`py-2 px-2 text-right font-semibold ${order.settlementAmount < 0 ? "text-red-600" : ""}`}>
-                          {formatCurrency(order.settlementAmount, order.currency)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-zinc-200 dark:border-zinc-800 text-muted-foreground text-[10px]">
+                      <th className="py-2 px-2 text-left font-medium w-8">#</th>
+                      <th className="py-2 px-2 text-left font-medium">Order ID</th>
+                      {showShopColumn && <th className="py-2 px-2 text-left font-medium">Shop</th>}
+                      <th className="py-2 px-2 text-left font-medium">Status</th>
+                      <th className="py-2 px-2 text-left font-medium">Tanggal</th>
+                      <th className="py-2 px-2 text-right font-medium">Total</th>
+                      <th className="py-2 px-2 text-right font-medium">Pencairan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.map((order, index) => {
+                      const rowNumber = index + 1;
+                      return (
+                        <tr key={order.id} className="border-b border-zinc-100 dark:border-zinc-900 hover:bg-muted/30 transition-colors">
+                          <td className="py-2 px-2 font-semibold text-muted-foreground">{rowNumber}</td>
+                          <td className="py-2 px-2 font-mono">{order.platformOrderId}</td>
+                          {showShopColumn && <td className="py-2 px-2">{order.shopName}</td>}
+                          <td className="py-2 px-2">{getStatusBadge(order.platformStatus)}</td>
+                          <td className="py-2 px-2 text-muted-foreground">{formatDate(order.orderCreateTime)}</td>
+                          <td className="py-2 px-2 text-right font-semibold">{formatCurrency(order.totalAmount, order.currency)}</td>
+                          <td className={`py-2 px-2 text-right font-semibold ${order.settlementAmount < 0 ? "text-red-600" : ""}`}>
+                            {formatCurrency(order.settlementAmount, order.currency)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* ── Infinite Scroll Sentinel & Load More ── */}
+              {hasNextPage && (
+                <div ref={loadMoreRef} className="flex flex-col items-center gap-3 py-6">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+                    <div className="h-px w-8 bg-zinc-200 dark:bg-zinc-800" />
+                    Menampilkan {orders.length} dari {totalOrders} order
+                    <div className="h-px w-8 bg-zinc-200 dark:bg-zinc-800" />
+                  </div>
+                  <button
+                    onClick={() => fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                    className="px-5 py-2 rounded-full bg-zinc-100 dark:bg-zinc-800/80 text-xs font-semibold text-foreground hover:bg-zinc-200 dark:hover:bg-zinc-700 transition duration-200 active:scale-95 border border-zinc-200/60 dark:border-zinc-700/50 disabled:opacity-50"
+                  >
+                    {isFetchingNextPage ? 'Memuat...' : 'Muat lebih lama ↓'}
+                  </button>
+                </div>
+              )}
+
+              {/* Show "all loaded" when everything is visible */}
+              {!hasNextPage && orders.length > 0 && (
+                <div className="flex items-center justify-center gap-2 py-5">
+                  <div className="h-px w-10 bg-zinc-200 dark:bg-zinc-800" />
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Semua order ditampilkan ({orders.length} order)
+                  </span>
+                  <div className="h-px w-10 bg-zinc-200 dark:bg-zinc-800" />
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between gap-4">
-          <div className="text-xs text-muted-foreground">
-            Showing {(currentPage - 1) * PAGE_SIZE + 1}-{Math.min(currentPage * PAGE_SIZE, totalOrders)} of {totalOrders} orders
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-              className="px-3 py-1.5 rounded-lg text-xs border border-zinc-200 dark:border-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-muted/50"
-            >
-              First
-            </button>
-            <button
-              onClick={() => setCurrentPage(currentPage - 1)}
-              disabled={currentPage === 1}
-              className="px-3 py-1.5 rounded-lg text-xs border border-zinc-200 dark:border-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-muted/50"
-            >
-              ←
-            </button>
-            {getPageNumbers().map((page) => (
-              <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                className={`px-3 py-1.5 rounded-lg text-xs border ${
-                  currentPage === page
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-zinc-200 dark:border-zinc-800 hover:bg-muted/50"
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-            <button
-              onClick={() => setCurrentPage(currentPage + 1)}
-              disabled={currentPage === totalPages}
-              className="px-3 py-1.5 rounded-lg text-xs border border-zinc-200 dark:border-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-muted/50"
-            >
-              →
-            </button>
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-              className="px-3 py-1.5 rounded-lg text-xs border border-zinc-200 dark:border-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-muted/50"
-            >
-              Last
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

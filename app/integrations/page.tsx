@@ -68,6 +68,15 @@ export default function IntegrationsPage() {
   const [syncStartDate, setSyncStartDate] = useState(getThisMonthStartDate);
   const [syncEndDate, setSyncEndDate] = useState(getThisMonthEndDate);
 
+  // Custom states for month-picker and popover daterange in sync
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  });
+
   const fetchConnections = async () => {
     if (!companyId) {
       setLoading(false);
@@ -178,6 +187,20 @@ export default function IntegrationsPage() {
 
   const getShopLabel = (conn: MarketplaceConnection) => conn.display_name || conn.shop_name;
 
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString("id-ID", { year: "numeric", month: "short", day: "numeric" });
+  };
+
+  const handleMonthChange = (monthStr: string) => {
+    setSelectedMonth(monthStr);
+    if (!monthStr) return;
+    const [year, month] = monthStr.split("-").map(Number);
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0); // last day of month
+    setSyncStartDate(toLocalDateStr(start));
+    setSyncEndDate(toLocalDateStr(end));
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto space-y-6">
@@ -278,7 +301,10 @@ export default function IntegrationsPage() {
                         const value = e.target.value;
                         setSyncDatePreset(value);
 
-                        if (value === "custom") return;
+                        if (value === "custom") {
+                          setIsPopoverOpen(true);
+                          return;
+                        }
 
                         const today = new Date();
                         let startDate: Date;
@@ -304,6 +330,11 @@ export default function IntegrationsPage() {
                             startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
                             endDate = new Date(today.getFullYear(), today.getMonth(), 0);
                             break;
+                          case "month":
+                            const [y, m] = selectedMonth.split("-").map(Number);
+                            startDate = new Date(y, m - 1, 1);
+                            endDate = new Date(y, m, 0);
+                            break;
                           default:
                             startDate = new Date(today);
                             startDate.setDate(today.getDate() - 30);
@@ -319,17 +350,57 @@ export default function IntegrationsPage() {
                       <option value="30days">30 Hari Terakhir</option>
                       <option value="this_month">Bulan Ini</option>
                       <option value="last_month">Bulan Lalu</option>
-                      <option value="custom">Custom Range</option>
+                      <option value="month">Pilih Bulan</option>
+                      <option value="custom">Rentang Kustom</option>
                     </select>
-                    {syncDatePreset === "custom" && (
-                      <>
-                        <input type="date" value={syncStartDate} onChange={(e) => setSyncStartDate(e.target.value)}
-                          className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary" />
-                        <span className="text-muted-foreground text-xs">→</span>
-                        <input type="date" value={syncEndDate} onChange={(e) => setSyncEndDate(e.target.value)}
-                          className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary" />
-                      </>
+
+                    {/* Opsi Pilih Bulan */}
+                    {syncDatePreset === "month" && (
+                      <input
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(e) => handleMonthChange(e.target.value)}
+                        className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary"
+                      />
                     )}
+
+                    {/* Opsi Rentang Kustom (Popover) */}
+                    {syncDatePreset === "custom" && (
+                      <div className="relative">
+                        <button
+                          onClick={() => setIsPopoverOpen(!isPopoverOpen)}
+                          className="h-8 flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-3 text-xs outline-none hover:bg-muted/50 transition-colors"
+                        >
+                          📅 {formatDate(syncStartDate)} - {formatDate(syncEndDate)}
+                        </button>
+                        {isPopoverOpen && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsPopoverOpen(false)} />
+                            <div className="absolute z-50 left-0 mt-1 p-3 bg-card border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-lg flex flex-col gap-2 min-w-[220px]">
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-muted-foreground block font-medium">Dari Tanggal</label>
+                                <input
+                                  type="date"
+                                  value={syncStartDate}
+                                  onChange={(e) => setSyncStartDate(e.target.value)}
+                                  className="h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-background px-2 text-xs outline-none focus:border-primary"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-muted-foreground block font-medium">Sampai Tanggal</label>
+                                <input
+                                  type="date"
+                                  value={syncEndDate}
+                                  onChange={(e) => setSyncEndDate(e.target.value)}
+                                  className="h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-background px-2 text-xs outline-none focus:border-primary"
+                                />
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
                     <Button variant="outline" size="sm"
                       onClick={() => handleSync(conn.id)}
                       disabled={syncing === conn.id || conn.status !== "active"}

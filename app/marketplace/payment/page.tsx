@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { useAuth } from "@/components/auth-provider";
 import { useKasFlowStore } from "@/store/use-kasflow-store";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,8 +79,6 @@ function getThisMonthEndDate() {
   return toLocalDateStr(end);
 }
 
-const PAGE_SIZE = 25;
-
 export default function MarketplacePaymentPage() {
   const { appUser } = useAuth();
   const companyId = appUser?.companyId || "";
@@ -92,17 +90,25 @@ export default function MarketplacePaymentPage() {
   const [selectedStatements, setSelectedStatements] = useState<Set<string>>(new Set());
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
 
   // Modal states
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmMessage, setConfirmMessage] = useState("");
   const [onConfirmAction, setOnConfirmAction] = useState<() => void>(() => {});
 
-  // Date filter (client-side)
+  // Date filters
   const [datePreset, setDatePreset] = useState("this_month");
   const [filterStartDate, setFilterStartDate] = useState(getThisMonthStartDate);
   const [filterEndDate, setFilterEndDate] = useState(getThisMonthEndDate);
+
+  // Custom states for month-picker and popover daterange
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  });
 
   // Account mapping
   const [mapping, setMapping] = useState({
@@ -112,12 +118,12 @@ export default function MarketplacePaymentPage() {
   });
   const [savingMapping, setSavingMapping] = useState(false);
 
-  // Reset to page 1 when filters change
+  // Reset statements selection when filters change
   useEffect(() => {
-    setCurrentPage(1);
+    setSelectedStatements(new Set());
   }, [selectedShop, filterStartDate, filterEndDate]);
 
-  // Fetch shops (parallel, doesn't depend on selectedShop)
+  // Fetch shops
   const { data: shopsData, isLoading: loadingShops } = useQuery({
     queryKey: ["shops", companyId],
     queryFn: async () => {
@@ -126,32 +132,52 @@ export default function MarketplacePaymentPage() {
       return data.connections || [];
     },
     enabled: !!companyId,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
   const shops = shopsData || [];
 
-  // Fetch statements (parallel with shops, pagination)
-  const { data: statementsData, isLoading: loadingStatements } = useQuery({
-    queryKey: ["statements", companyId, selectedShop, currentPage],
-    queryFn: async () => {
-      const offset = (currentPage - 1) * PAGE_SIZE;
+  // Fetch statements using Infinite Query
+  const {
+    data: statementsData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: loadingStatements,
+  } = useInfiniteQuery({
+    queryKey: ["statements", companyId, selectedShop, filterStartDate, filterEndDate],
+    queryFn: async ({ pageParam = 0 }) => {
       const params = new URLSearchParams({
         companyId,
-        offset: offset.toString(),
-        limit: PAGE_SIZE.toString(),
+        offset: pageParam.toString(),
+        limit: "10", // 10 per page
       });
       if (selectedShop !== "all") {
         params.append("connectionId", selectedShop);
       }
+      if (filterStartDate) params.append("startDate", filterStartDate);
+      if (filterEndDate) params.append("endDate", filterEndDate);
+
       const res = await fetch(`/api/integrations/tiktok/statements?${params}`);
-      const data = await res.json();
-      return { statements: data.statements || [], total: data.total || 0 };
+      return res.json();
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      const nextOffset = lastPage.offset + lastPage.limit;
+      return nextOffset < lastPage.total ? nextOffset : undefined;
     },
     enabled: !!companyId,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
   });
-  const statements = statementsData?.statements || [];
-  const totalStatements = statementsData?.total || 0;
+
+  const statements = statementsData ? statementsData.pages.flatMap((page) => page.statements) : [];
+  const totalStatements = statementsData?.pages[0]?.total || 0;
+  const totals = statementsData?.pages[0]?.summary || {
+    totalRevenue: 0,
+    totalFee: 0,
+    totalSettlement: 0,
+    reconciledCount: 0,
+    pendingCount: 0,
+  };
 
   // Fetch mapping only when specific shop is selected
   const { data: mappingData } = useQuery({
@@ -190,7 +216,7 @@ export default function MarketplacePaymentPage() {
       return result;
     },
     enabled: !!companyId && selectedShop !== "all",
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 
   const categories = mappingData?.categories || [];
@@ -203,7 +229,39 @@ export default function MarketplacePaymentPage() {
     }
   }, [mappingData]);
 
+  // Infinite Scroll Sentinel Ref & IntersectionObserver
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  const handleLoadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) handleLoadMore();
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [handleLoadMore]);
+
   const loading = loadingShops || loadingStatements;
+
+  const handleMonthChange = (monthStr: string) => {
+    setSelectedMonth(monthStr);
+    if (!monthStr) return;
+    const [year, month] = monthStr.split("-").map(Number);
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0); // last day of month
+    setFilterStartDate(toLocalDateStr(start));
+    setFilterEndDate(toLocalDateStr(end));
+  };
 
   const saveMapping = async () => {
     if (selectedShop === "all") return;
@@ -241,32 +299,6 @@ export default function MarketplacePaymentPage() {
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("id-ID", { year: "numeric", month: "short", day: "numeric" });
   };
-
-  const calculateTotals = () => {
-    const settled = filteredStatements.filter((s) => s.paymentStatus === "PAID");
-    return {
-      totalRevenue: settled.reduce((sum, s) => sum + s.revenueAmount, 0),
-      totalFee: settled.reduce((sum, s) => sum + Math.abs(s.feeAmount), 0),
-      totalSettlement: settled.reduce((sum, s) => sum + s.settlementAmount, 0),
-      reconciledCount: filteredStatements.filter((s) => s.reconciled).length,
-      pendingCount: filteredStatements.filter((s) => s.approvalStatus === "pending_approval").length,
-    };
-  };
-
-  // Client-side date filter (for display only, server handles pagination)
-  const filteredStatements = statements.filter((s) => {
-    if (!s.statementTime) return true;
-    const d = s.statementTime.split("T")[0];
-    return d >= filterStartDate && d <= filterEndDate;
-  });
-
-  // Server-side pagination
-  const totalPages = Math.ceil(totalStatements / PAGE_SIZE);
-
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filterStartDate, filterEndDate, selectedShop]);
 
   const handleApprove = async (statementIds?: string[]) => {
     const ids = statementIds || Array.from(selectedStatements);
@@ -335,7 +367,7 @@ export default function MarketplacePaymentPage() {
   };
 
   const toggleAllPending = () => {
-    const pendingStatements = filteredStatements.filter((s) => s.approvalStatus === "pending_approval");
+    const pendingStatements = statements.filter((s) => s.approvalStatus === "pending_approval");
     if (selectedStatements.size === pendingStatements.length) setSelectedStatements(new Set());
     else setSelectedStatements(new Set(pendingStatements.map((s) => s.id)));
   };
@@ -356,7 +388,7 @@ export default function MarketplacePaymentPage() {
     return <Badge tone="red">FAILED</Badge>;
   };
 
-  if (loading) {
+  if (loading && statements.length === 0) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
@@ -368,7 +400,6 @@ export default function MarketplacePaymentPage() {
     );
   }
 
-  const totals = calculateTotals();
   const showShopColumn = selectedShop === "all";
 
   return (
@@ -441,8 +472,16 @@ export default function MarketplacePaymentPage() {
                   start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
                   end = new Date(today.getFullYear(), today.getMonth(), 0);
                   break;
+                case "month":
+                  const [y, m] = selectedMonth.split("-").map(Number);
+                  start = new Date(y, m - 1, 1);
+                  end = new Date(y, m, 0);
+                  break;
+                case "custom":
+                  setIsPopoverOpen(true);
+                  return;
                 default:
-                  return; // custom range, don't change dates
+                  return;
               }
 
               setFilterStartDate(toLocalDateStr(start));
@@ -455,16 +494,55 @@ export default function MarketplacePaymentPage() {
             <option value="30days">30 Hari Terakhir</option>
             <option value="this_month">Bulan Ini</option>
             <option value="last_month">Bulan Lalu</option>
-            <option value="custom">Custom Range</option>
+            <option value="month">Pilih Bulan</option>
+            <option value="custom">Rentang Kustom</option>
           </select>
+
+          {/* Opsi 2: Tampil 1 Field Bulan */}
+          {datePreset === "month" && (
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => handleMonthChange(e.target.value)}
+              className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary"
+            />
+          )}
+
+          {/* Opsi 1: Tampil 1 Tombol Pemicu Popover */}
           {datePreset === "custom" && (
-            <>
-              <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)}
-                className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary" />
-              <span className="text-muted-foreground">→</span>
-              <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)}
-                className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-2 text-xs outline-none focus:border-primary" />
-            </>
+            <div className="relative">
+              <button
+                onClick={() => setIsPopoverOpen(!isPopoverOpen)}
+                className="h-8 flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-card px-3 text-xs outline-none hover:bg-muted/50 transition-colors"
+              >
+                📅 {formatDate(filterStartDate)} - {formatDate(filterEndDate)}
+              </button>
+              {isPopoverOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsPopoverOpen(false)} />
+                  <div className="absolute z-50 left-0 mt-1 p-3 bg-card border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-lg flex flex-col gap-2 min-w-[220px]">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground block font-medium">Dari Tanggal</label>
+                      <input
+                        type="date"
+                        value={filterStartDate}
+                        onChange={(e) => setFilterStartDate(e.target.value)}
+                        className="h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-background px-2 text-xs outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground block font-medium">Sampai Tanggal</label>
+                      <input
+                        type="date"
+                        value={filterEndDate}
+                        onChange={(e) => setFilterEndDate(e.target.value)}
+                        className="h-8 w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-background px-2 text-xs outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -511,7 +589,7 @@ export default function MarketplacePaymentPage() {
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="statements" className="text-xs flex items-center gap-1.5">
             <FileText className="h-3.5 w-3.5" />
-            Statements ({filteredStatements.length})
+            Statements ({statements.length})
           </TabsTrigger>
           <TabsTrigger value="pending" className="text-xs flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5" />
@@ -552,7 +630,7 @@ export default function MarketplacePaymentPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {filteredStatements.length === 0 ? (
+              {statements.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
                   <h3 className="font-semibold mb-2 text-sm">Belum Ada Statement</h3>
@@ -581,8 +659,8 @@ export default function MarketplacePaymentPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredStatements.map((stmt, index) => {
-                          const rowNumber = (currentPage - 1) * PAGE_SIZE + index + 1;
+                        {statements.map((stmt, index) => {
+                          const rowNumber = index + 1;
                           return (
                             <tr key={stmt.id} className="border-b border-zinc-100 dark:border-zinc-900 hover:bg-muted/30 transition-colors">
                               <td className="py-2 px-2">
@@ -608,43 +686,33 @@ export default function MarketplacePaymentPage() {
                       </tbody>
                     </table>
                   </div>
-                  {/* Pagination */}
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-                      <div className="text-xs text-muted-foreground">
-                        Showing {(currentPage - 1) * PAGE_SIZE + 1}-{Math.min(currentPage * PAGE_SIZE, totalStatements)} of {totalStatements}
+
+                  {/* ── Infinite Scroll Sentinel & Load More ── */}
+                  {hasNextPage && (
+                    <div ref={loadMoreRef} className="flex flex-col items-center gap-3 py-6">
+                      <div className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+                        <div className="h-px w-8 bg-zinc-200 dark:bg-zinc-800" />
+                        Menampilkan {statements.length} dari {totalStatements} statement
+                        <div className="h-px w-8 bg-zinc-200 dark:bg-zinc-800" />
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1}
-                          className="px-3 py-1.5 rounded-lg text-xs border border-zinc-200 dark:border-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-muted/50">First</button>
-                        <button onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage === 1}
-                          className="px-3 py-1.5 rounded-lg text-xs border border-zinc-200 dark:border-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-muted/50">←</button>
-                        {(() => {
-                          const maxVisible = 5;
-                          let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-                          let end = Math.min(totalPages, start + maxVisible - 1);
+                      <button
+                        onClick={() => fetchNextPage()}
+                        disabled={isFetchingNextPage}
+                        className="px-5 py-2 rounded-full bg-zinc-100 dark:bg-zinc-800/80 text-xs font-semibold text-foreground hover:bg-zinc-200 dark:hover:bg-zinc-700 transition duration-200 active:scale-95 border border-zinc-200/60 dark:border-zinc-700/50 disabled:opacity-50"
+                      >
+                        {isFetchingNextPage ? 'Memuat...' : 'Muat lebih lama ↓'}
+                      </button>
+                    </div>
+                  )}
 
-                          if (end - start + 1 < maxVisible) {
-                            start = Math.max(1, end - maxVisible + 1);
-                          }
-
-                          const pages = [];
-                          for (let i = start; i <= end; i++) {
-                            pages.push(i);
-                          }
-
-                          return pages.map((page) => (
-                            <button key={page} onClick={() => setCurrentPage(page)}
-                              className={`px-3 py-1.5 rounded-lg text-xs border ${currentPage === page ? "bg-primary text-primary-foreground border-primary" : "border-zinc-200 dark:border-zinc-800 hover:bg-muted/50"}`}>
-                              {page}
-                            </button>
-                          ));
-                        })()}
-                        <button onClick={() => setCurrentPage(currentPage + 1)} disabled={currentPage === totalPages}
-                          className="px-3 py-1.5 rounded-lg text-xs border border-zinc-200 dark:border-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-muted/50">→</button>
-                        <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}
-                          className="px-3 py-1.5 rounded-lg text-xs border border-zinc-200 dark:border-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-muted/50">Last</button>
-                      </div>
+                  {/* Show "all loaded" when everything is visible */}
+                  {!hasNextPage && statements.length > 0 && (
+                    <div className="flex items-center justify-center gap-2 py-5">
+                      <div className="h-px w-10 bg-zinc-200 dark:bg-zinc-800" />
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                        Semua statement ditampilkan ({statements.length} statement)
+                      </span>
+                      <div className="h-px w-10 bg-zinc-200 dark:bg-zinc-800" />
                     </div>
                   )}
                 </>
@@ -680,7 +748,7 @@ export default function MarketplacePaymentPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {filteredStatements.filter((s) => s.approvalStatus === "pending_approval").length === 0 ? (
+              {statements.filter((s) => s.approvalStatus === "pending_approval").length === 0 ? (
                 <div className="text-center py-12">
                   <CheckCircle2 className="h-12 w-12 mx-auto text-emerald-500/40 mb-4" />
                   <h3 className="font-semibold mb-2 text-sm">Semua Sudah Di-Review!</h3>
@@ -705,7 +773,7 @@ export default function MarketplacePaymentPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredStatements.filter((s) => s.approvalStatus === "pending_approval").map((stmt) => (
+                      {statements.filter((s) => s.approvalStatus === "pending_approval").map((stmt) => (
                         <tr key={stmt.id} className="border-b border-zinc-100 dark:border-zinc-900 hover:bg-yellow-50/50 dark:hover:bg-yellow-900/10 transition-colors">
                           <td className="py-2 px-2">
                             <Checkbox checked={selectedStatements.has(stmt.id)} onCheckedChange={() => toggleStatementSelection(stmt.id)} />
@@ -789,7 +857,7 @@ export default function MarketplacePaymentPage() {
                         <option key={ca.id} value={ca.id}>{ca.name}</option>
                       ))}
                     </select>
-                    <p className="text-[11px] text-muted-foreground mt-1">Uang hasil penjualan TikTok akan masuk ke akun ini</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">Rekening penampung dana pencairan (settlement) dari TikTok</p>
                   </div>
                   <div className="pt-4 border-t">
                     <Button onClick={saveMapping}
